@@ -6,6 +6,7 @@ export const useSocket = () => {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [peers, setPeers] = useState<Peer[]>([]);
+  const joinedRoomsRef = useRef<Set<string>>(new Set()); // Track joined rooms per connection
 
   useEffect(() => {
     // In a real app, this would be your Socket.IO server URL
@@ -16,22 +17,31 @@ export const useSocket = () => {
     const socket = socketRef.current;
 
     socket.on('connect', () => {
+      console.log('🔌 Socket connected');
       setIsConnected(true);
+      // Clear joined rooms on new connection
+      joinedRoomsRef.current.clear();
     });
 
     socket.on('disconnect', () => {
+      console.log('🔌 Socket disconnected');
       setIsConnected(false);
+      // Clear joined rooms on disconnect
+      joinedRoomsRef.current.clear();
     });
 
     socket.on('peers', (peerList: Peer[]) => {
+      console.log('📡 Received peers:', peerList.length);
       setPeers(peerList);
     });
 
     socket.on('peer-joined', (peer: Peer) => {
+      console.log('👥 Peer joined:', peer.name);
       setPeers(prev => [...prev.filter(p => p.id !== peer.id), peer]);
     });
 
     socket.on('peer-left', (peerId: string) => {
+      console.log('👋 Peer left:', peerId);
       setPeers(prev => prev.filter(p => p.id !== peerId));
     });
 
@@ -41,19 +51,52 @@ export const useSocket = () => {
   }, []);
 
   const joinRoom = (room: string, userId: string, name: string, color: string, emoji: string) => {
-    socketRef.current?.emit('join-room', { room, userId, name, color, emoji });
+    const socket = socketRef.current;
+    if (!socket || !socket.connected) {
+      console.warn('⚠️ Socket not connected, cannot join room');
+      return;
+    }
+
+    // Check if we've already joined this room in this connection
+    const roomKey = `${room}-${userId}`;
+    if (joinedRoomsRef.current.has(roomKey)) {
+      console.log('🔄 Already joined room:', room);
+      return;
+    }
+
+    console.log('🚀 Joining room:', room);
+    socket.emit('join-room', { room, userId, name, color, emoji });
+    joinedRoomsRef.current.add(roomKey);
   };
 
   const updateProfile = (name: string, color: string, emoji: string) => {
-    socketRef.current?.emit('update-profile', { name, color, emoji });
+    const socket = socketRef.current;
+    if (!socket || !socket.connected) {
+      console.warn('⚠️ Socket not connected, cannot update profile');
+      return;
+    }
+    socket.emit('update-profile', { name, color, emoji });
   };
 
   const sendSignal = (to: string, from: string, data: any) => {
-    socketRef.current?.emit('signal', { to, from, data });
+    const socket = socketRef.current;
+    if (!socket || !socket.connected) {
+      console.warn('⚠️ Socket not connected, cannot send signal');
+      return;
+    }
+    socket.emit('signal', { to, from, data });
   };
 
   const onSignal = (callback: (data: { from: string; data: any }) => void) => {
-    socketRef.current?.on('signal', callback);
+    const socket = socketRef.current;
+    if (!socket) return;
+    
+    socket.on('signal', callback);
+    
+    // Return cleanup function
+    return () => {
+      socket.off('signal', callback);
+    };
   };
 
   return {

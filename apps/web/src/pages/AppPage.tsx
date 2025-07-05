@@ -17,20 +17,40 @@ export const AppPage: React.FC = () => {
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [currentUser, setCurrentUser] = useState({
-    id: `user-${Date.now()}`,
+    id: `user-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`,
     name: 'You',
     emoji: getRandomEmoji(),
     color: getRandomColor()
   });
+  const [roomCode, setRoomCode] = useState<string | null>(null);
 
   const { isConnected, peers, joinRoom, updateProfile, sendSignal, onSignal } = useSocket();
   const { transfers, sendFile, handleSignal, cancelTransfer } = useWebRTC(sendSignal, currentUser.id);
 
+  // Set up signal handling once
   useEffect(() => {
-    onSignal(({ from, data }) => {
+    const cleanup = onSignal(({ from, data }) => {
       handleSignal(from, data);
     });
+    
+    return cleanup;
   }, [onSignal, handleSignal]);
+
+  // Handle room joining when room code changes
+  const handleJoinRoom = (code: string) => {
+    setRoomCode(code);
+    // Join room will be called by the socket hook when connected
+    if (isConnected) {
+      joinRoom(code, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+    }
+  };
+
+  // Join room when connection is established and we have a room code
+  useEffect(() => {
+    if (isConnected && roomCode) {
+      joinRoom(roomCode, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+    }
+  }, [isConnected, roomCode]); // Removed currentUser and joinRoom from dependencies
 
   const handlePeerClick = (peer: Peer) => {
     setSelectedPeer(peer);
@@ -43,15 +63,6 @@ export const AppPage: React.FC = () => {
     setSelectedFiles([]);
   };
 
-  const handleJoinRoom = (roomCode: string) => {
-    joinRoom(roomCode, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
-  };
-
-  const handleProfileSave = (profile: { name: string; emoji: string; color: string }) => {
-    setCurrentUser(prev => ({ ...prev, ...profile }));
-    updateProfile(profile.name, profile.color, profile.emoji);
-  };
-
   const handleFileRemove = (index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
@@ -61,23 +72,27 @@ export const AppPage: React.FC = () => {
     setSelectedFiles([]);
   };
 
+  const handleProfileUpdate = (profile: { name: string; emoji: string; color: string }) => {
+    setCurrentUser(prev => ({ ...prev, ...profile }));
+    updateProfile(profile.name, profile.color, profile.emoji);
+  };
+
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F9F8F5' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#FEF7E0' }}>
       {/* Header */}
       <motion.header
         className="p-6 border-b"
-        style={{ borderColor: 'rgba(44, 27, 18, 0.1)' }}
+        style={{ borderColor: 'rgba(166, 82, 27, 0.1)' }}
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <img src="/c0py.me-logo.gif" alt="c0py.me" className="w-10 h-10" />
-            <div>
-              <h1 className="text-2xl font-bold" style={{ color: '#2C1B12' }}>ShareDrop</h1>
-              <p className="text-sm" style={{ color: '#A6521B' }}>by c0py.me</p>
-            </div>
+          <div className="flex items-center gap-3">
+            <LionIcon className="w-8 h-8" />
+            <h1 className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
+              ShareDrop
+            </h1>
           </div>
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
@@ -150,7 +165,7 @@ export const AppPage: React.FC = () => {
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         currentProfile={currentUser}
-        onSave={handleProfileSave}
+        onSave={handleProfileUpdate}
       />
     </div>
   );
