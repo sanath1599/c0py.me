@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { LionsDen } from '../components/LionsDen';
-import { RoomModal } from '../components/RoomModal';
 import { ProfileModal } from '../components/ProfileModal';
 import { ToastContainer, Toast } from '../components/Toast';
 import { useSocket } from '../hooks/useSocket';
@@ -13,7 +12,6 @@ import { LionIcon } from '../components/LionIcon';
 export const AppPage: React.FC = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
-  const [showRoomModal, setShowRoomModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [currentUser, setCurrentUser] = useState({
@@ -22,32 +20,25 @@ export const AppPage: React.FC = () => {
     emoji: getRandomEmoji(),
     color: getRandomColor()
   });
-  const [roomCode, setRoomCode] = useState<string | null>(null);
 
-  const { isConnected, peers, joinRoom, updateProfile, sendSignal, onSignal } = useSocket();
-  const { transfers, sendFile, handleSignal, cancelTransfer } = useWebRTC(sendSignal, currentUser.id);
+  const { isConnected, peers, joinDefaultRoom, updateProfile, sendSignal, onSignal } = useSocket();
+  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile } = useWebRTC(sendSignal, currentUser.id);
 
   // Set up signal handling once
   useEffect(() => {
-    const cleanup = onSignal(({ from, data }) => {
+    const cleanup = onSignal((from, data) => {
       handleSignal(from, data);
     });
     
     return cleanup;
   }, [onSignal, handleSignal]);
 
-  // Handle room joining when room code changes
-  const handleJoinRoom = (roomCode: string) => {
-    setRoomCode(roomCode);
-    joinRoom(roomCode, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
-  };
-
-  // Join room when connection is established and we have a room code
+  // Join default jungle room when connection is established
   useEffect(() => {
-    if (isConnected && roomCode) {
-      joinRoom(roomCode, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+    if (isConnected) {
+      joinDefaultRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
     }
-  }, [isConnected, roomCode]); // Removed currentUser and joinRoom from dependencies
+  }, [isConnected, currentUser, joinDefaultRoom]);
 
   const handlePeerClick = (peer: Peer) => {
     setSelectedPeer(peer);
@@ -153,6 +144,7 @@ export const AppPage: React.FC = () => {
             selectedPeer={selectedPeer}
             selectedFiles={selectedFiles}
             transfers={transfers}
+            incomingFiles={incomingFiles}
             onPeerClick={handlePeerClick}
             onSendFiles={handleSendFiles}
             onCancelTransfer={handleCancelTransfer}
@@ -160,18 +152,13 @@ export const AppPage: React.FC = () => {
             onFilesSelected={handleFilesSelected}
             onFileRemove={handleFileRemove}
             onEditProfile={() => setShowProfileModal(true)}
-            onJoinRoom={() => setShowRoomModal(true)}
+            onAcceptIncomingFile={acceptIncomingFile}
+            onRejectIncomingFile={rejectIncomingFile}
           />
         </div>
       </main>
 
       {/* Modals */}
-      <RoomModal
-        isOpen={showRoomModal}
-        onClose={() => setShowRoomModal(false)}
-        onJoinRoom={handleJoinRoom}
-      />
-
       <ProfileModal
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}

@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback } from 'react';
 import { FileTransfer, Peer } from '../types';
+import { formatFileSize } from '../utils/format';
 
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -11,8 +12,17 @@ const CHUNK_SIZE = 16384; // 16KB chunks
 export const useWebRTC = (onSignal: (to: string, from: string, data: any) => void, userId: string) => {
   const [connections, setConnections] = useState<Map<string, RTCPeerConnection>>(new Map());
   const [transfers, setTransfers] = useState<FileTransfer[]>([]);
+  const [incomingFiles, setIncomingFiles] = useState<Array<{
+    id: string;
+    from: string;
+    fileName: string;
+    fileSize: number;
+    fileType: string;
+    transferId: string;
+  }>>([]);
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
   const receivedFilesRef = useRef<Map<string, { name: string; size: number; type: string; chunks: ArrayBuffer[] }>>(new Map());
+  const pendingFilesRef = useRef<Map<string, { file: File; peer: any; transferId: string }>>(new Map());
 
   const createPeerConnection = useCallback((peerId: string) => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -51,7 +61,7 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
       id: transferId,
       file,
       peer,
-      status: 'connecting',
+      status: 'pending',
       progress: 0
     };
 
@@ -70,12 +80,43 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
 
       dataChannel.onopen = () => {
         console.log('📤 Data channel opened for sending');
-        setTransfers(prev => prev.map(t => 
-          t.id === transferId ? { ...t, status: 'transferring' } : t
-        ));
         
-        // Start file transfer
-        sendFileInChunks(dataChannel, file, transferId);
+        // Send file request first
+        dataChannel.send(JSON.stringify({
+          type: 'file-request',
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+          transferId: transferId
+        }));
+        
+        // Store pending file for when receiver accepts
+        pendingFilesRef.current.set(transferId, { file, peer, transferId });
+      };
+
+      dataChannel.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          try {
+            const message = JSON.parse(event.data);
+            if (message.type === 'file-accepted' && message.transferId === transferId) {
+              console.log('📤 File accepted, starting transfer');
+              setTransfers(prev => prev.map(t => 
+                t.id === transferId ? { ...t, status: 'transferring' } : t
+              ));
+              
+              // Start file transfer
+              sendFileInChunks(dataChannel, file, transferId);
+            } else if (message.type === 'file-rejected' && message.transferId === transferId) {
+              console.log('📤 File rejected');
+              setTransfers(prev => prev.map(t => 
+                t.id === transferId ? { ...t, status: 'cancelled' } : t
+              ));
+              pendingFilesRef.current.delete(transferId);
+            }
+          } catch (error) {
+            console.error('❌ Error parsing message:', error);
+          }
+        }
       };
 
       dataChannel.onerror = (error) => {
@@ -92,9 +133,11 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
       dataChannelsRef.current.set(peer.id, dataChannel);
 
       // Create offer
+      console.log(`📤 Creating offer for ${peer.id}`);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       
+      console.log(`📤 Sending offer to ${peer.id}`);
       onSignal(peer.id, userId, {
         type: 'offer',
         sdp: offer
@@ -181,9 +224,11 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
   };
 
   const handleSignal = useCallback(async (from: string, data: any) => {
+    console.log(`📡 Received signal from ${from}:`, data.type);
     let pc = connections.get(from);
     
     if (data.type === 'offer') {
+      console.log(`📡 Processing offer from ${from}`);
       if (!pc) {
         pc = createPeerConnection(from);
         
@@ -196,7 +241,32 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
             if (typeof event.data === 'string') {
               try {
                 const message = JSON.parse(event.data);
-                if (message.type === 'file-start') {
+                if (message.type === 'file-request') {
+                  console.log('📥 File request received:', message.fileName, 'from:', from);
+                  // Store the sender's transferId for protocol matching
+                  const senderTransferId = message.transferId;
+                  const incomingFileId = `incoming-${Date.now()}-${Math.random()}`;
+                  setIncomingFiles(prev => [...prev, {
+                    id: incomingFileId, // for UI
+                    from: from,
+                    fileName: message.fileName,
+                    fileSize: message.fileSize,
+                    fileType: message.fileType,
+                    transferId: senderTransferId // store sender's transferId
+                  }]);
+                  
+                  // Store data channel for this transfer
+                  dataChannelsRef.current.set(incomingFileId, dataChannel);
+                  
+                  // Show browser notification if available
+                  if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification('Incoming File', {
+                      body: `${message.fileName} (${formatFileSize(message.fileSize)}) from ${from}`,
+                      icon: '/favicon.ico'
+                    });
+                  }
+                  
+                } else if (message.type === 'file-start') {
                   console.log('📥 Receiving file:', message.name);
                   receivedFilesRef.current.set(from, {
                     name: message.name,
@@ -204,16 +274,36 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
                     type: message.fileType,
                     chunks: []
                   });
-                  
-                  // Add transfer to list for UI
-                  const transferId = `receive-${Date.now()}-${Math.random()}`;
-                  setTransfers(prev => [...prev, {
-                    id: transferId,
-                    file: new File([], message.name, { type: message.fileType }),
-                    peer: { id: from, name: 'Unknown', emoji: '📱', color: '#F6C148', isOnline: true },
-                    status: 'transferring',
-                    progress: 0
-                  }]);
+                  // Only add transfer if not already present for this peer and file
+                  setTransfers(prev => {
+                    const alreadyExists = prev.some(t =>
+                      t.peer.id === from &&
+                      t.file.name === message.name &&
+                      t.file.type === message.fileType &&
+                      t.status !== 'completed'
+                    );
+                    if (alreadyExists) {
+                      // Update status to 'transferring' if needed
+                      return prev.map(t =>
+                        t.peer.id === from && t.file.name === message.name && t.file.type === message.fileType && t.status !== 'completed'
+                          ? { ...t, status: 'transferring' }
+                          : t
+                      );
+                    } else {
+                      // Add new transfer if not present
+                      const transferId = `receive-${Date.now()}-${Math.random()}`;
+                      return [
+                        ...prev,
+                        {
+                          id: transferId,
+                          file: new File([], message.name, { type: message.fileType }),
+                          peer: { id: from, name: 'Unknown', emoji: '📱', color: '#F6C148', isOnline: true },
+                          status: 'transferring',
+                          progress: 0
+                        }
+                      ];
+                    }
+                  });
                 } else if (message.type === 'file-end') {
                   const receivedFile = receivedFilesRef.current.get(from);
                   if (receivedFile) {
@@ -310,10 +400,58 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
     }
   }, [transfers]);
 
+  const acceptIncomingFile = useCallback((incomingFileId: string) => {
+    const incomingFile = incomingFiles.find(f => f.id === incomingFileId);
+    if (!incomingFile) return;
+    const dataChannel = dataChannelsRef.current.get(incomingFileId);
+    if (dataChannel && dataChannel.readyState === 'open') {
+      // Send acceptance message with the sender's transferId
+      dataChannel.send(JSON.stringify({
+        type: 'file-accepted',
+        transferId: incomingFile.transferId
+      }));
+      // Remove from incoming files
+      setIncomingFiles(prev => prev.filter(f => f.id !== incomingFileId));
+      // Add to transfers list
+      const transferId = `receive-${Date.now()}-${Math.random()}`;
+      setTransfers(prev => [...prev, {
+        id: transferId,
+        file: new File([], incomingFile.fileName, { type: incomingFile.fileType }),
+        peer: { id: incomingFile.from, name: 'Unknown', emoji: '📱', color: '#F6C148', isOnline: true },
+        status: 'transferring',
+        progress: 0
+      }]);
+      // Set up file receiving
+      receivedFilesRef.current.set(incomingFile.from, {
+        name: incomingFile.fileName,
+        size: incomingFile.fileSize,
+        type: incomingFile.fileType,
+        chunks: []
+      });
+    }
+  }, [incomingFiles]);
+
+  const rejectIncomingFile = useCallback((incomingFileId: string) => {
+    const incomingFile = incomingFiles.find(f => f.id === incomingFileId);
+    const dataChannel = dataChannelsRef.current.get(incomingFileId);
+    if (dataChannel && dataChannel.readyState === 'open' && incomingFile) {
+      // Send rejection message with the sender's transferId
+      dataChannel.send(JSON.stringify({
+        type: 'file-rejected',
+        transferId: incomingFile.transferId
+      }));
+    }
+    // Remove from incoming files
+    setIncomingFiles(prev => prev.filter(f => f.id !== incomingFileId));
+  }, [incomingFiles]);
+
   return {
     transfers,
+    incomingFiles,
     sendFile,
     handleSignal,
-    cancelTransfer
+    cancelTransfer,
+    acceptIncomingFile,
+    rejectIncomingFile
   };
 };

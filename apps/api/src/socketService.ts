@@ -38,8 +38,8 @@ export class SocketService {
       });
 
       // Handle WebRTC signaling
-      socket.on('signal', (data: SignalMessage) => {
-        this.handleSignal(socket, data);
+      socket.on('signal', async (data: SignalMessage) => {
+        await this.handleSignal(socket, data);
       });
 
       // Handle disconnection
@@ -128,17 +128,25 @@ export class SocketService {
     }
   }
 
-  private handleSignal(socket: Socket, data: SignalMessage): void {
+  private async handleSignal(socket: Socket, data: SignalMessage): Promise<void> {
     try {
       const { to, from, data: signalData } = data;
       
-      // Find the target peer's socket
-      const targetSocket = this.peerSockets.get(to);
+      // Find the target peer by user ID
+      const allPeers = await redisService.getAllPeers();
+      const targetPeer = allPeers.find(p => p.id === to);
       
-      if (targetSocket) {
-        // Forward the signal to the target peer
-        targetSocket.emit('signal', { from, data: signalData });
-        console.log(`📡 Signal forwarded from ${from} to ${to}`);
+      if (targetPeer && targetPeer.socketId) {
+        // Find the target peer's socket
+        const targetSocket = this.peerSockets.get(targetPeer.socketId);
+        
+        if (targetSocket) {
+          // Forward the signal to the target peer
+          targetSocket.emit('signal', { from, data: signalData });
+          console.log(`📡 Signal forwarded from ${from} to ${to} (socket: ${targetPeer.socketId})`);
+        } else {
+          console.warn(`⚠️ Target peer ${to} socket not found for signal from ${from}`);
+        }
       } else {
         console.warn(`⚠️ Target peer ${to} not found for signal from ${from}`);
       }

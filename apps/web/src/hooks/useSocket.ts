@@ -107,6 +107,10 @@ export const useSocket = () => {
     joinedRoomsRef.current.add(roomKey);
   };
 
+  const joinDefaultRoom = (userId: string, name: string, color: string, emoji: string) => {
+    joinRoom('jungle', userId, name, color, emoji);
+  };
+
   const updateProfile = (name: string, color: string, emoji: string) => {
     const socket = socketRef.current;
     if (!socket || !socket.connected) {
@@ -125,15 +129,17 @@ export const useSocket = () => {
     socket.emit('signal', { to, from, data });
   };
 
-  const onSignal = (callback: (data: { from: string; data: any }) => void) => {
+  const onSignal = (callback: (from: string, data: any) => void) => {
     const socket = socketRef.current;
     if (!socket) return;
     
-    socket.on('signal', callback);
+    socket.on('signal', (signalData: { from: string; data: any }) => {
+      callback(signalData.from, signalData.data);
+    });
     
     // Return cleanup function
     return () => {
-      socket.off('signal', callback);
+      socket.off('signal');
     };
   };
 
@@ -141,6 +147,7 @@ export const useSocket = () => {
     isConnected,
     peers,
     joinRoom,
+    joinDefaultRoom,
     updateProfile,
     sendSignal,
     onSignal
