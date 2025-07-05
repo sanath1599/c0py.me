@@ -9,6 +9,7 @@ import React, {
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Globe, Lock, RefreshCw, Copy } from 'lucide-react';
 import { GlassCard } from './GlassCard';
+import { trackRoomEvents } from '../utils/analytics';
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -79,9 +80,11 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   /* ---------------------------------- */
 
   const handleRandom = useCallback(() => {
-    setRoomId(generateRandomRoomId());
+    const newRoomId = generateRandomRoomId();
+    setRoomId(newRoomId);
     setTouched(true);
     setCopied(false);
+    trackRoomEvents.created(newRoomId);
   }, []);
 
   const handleCopy = useCallback(() => {
@@ -91,6 +94,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
       navigator.clipboard.writeText(roomId).then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 1200);
+        trackRoomEvents.copied(roomId);
       });
     }
   }, [roomId]);

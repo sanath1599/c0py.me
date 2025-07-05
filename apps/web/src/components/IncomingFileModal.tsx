@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from './GlassCard';
-import { File as FileIcon, User } from 'lucide-react';
+import { File as FileIcon, User, X, Download, XCircle, Shield, FileText, Clock } from 'lucide-react';
 import { formatFileSize } from '../utils/format';
+import { trackPrivacyEvents } from '../utils/analytics';
 
 interface IncomingFileModalProps {
   isOpen: boolean;
@@ -63,7 +64,10 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
               {/* Actions */}
               <div className="flex gap-4 mt-8 w-full">
                 <button
-                  onClick={onAccept}
+                  onClick={() => {
+                    trackPrivacyEvents.fileReceived(file.fileType);
+                    onAccept();
+                  }}
                   className="flex-1 py-3 rounded-xl bg-white/40 border border-orange-200 text-orange-900 font-bold text-lg shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all hover:scale-105 backdrop-blur-[8px] relative overflow-hidden"
                   style={{ boxShadow: '0 4px 24px 0 #F6C14844' }}
                 >
@@ -74,7 +78,10 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
                   <span className="pointer-events-none absolute inset-0 rounded-xl opacity-0 hover:opacity-100 transition-opacity duration-300" style={{ background: 'linear-gradient(120deg,rgba(255,255,255,0.18) 0%,rgba(255,255,255,0.05) 100%)' }} />
                 </button>
                 <button
-                  onClick={onReject}
+                  onClick={() => {
+                    trackPrivacyEvents.fileRejected(file.fileType);
+                    onReject();
+                  }}
                   className="flex-1 py-3 rounded-xl bg-white/30 border border-orange-100 text-orange-700 font-bold text-lg shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all hover:scale-105 backdrop-blur-[8px] relative overflow-hidden"
                 >
                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/50 backdrop-blur-[6px] mr-2 shadow border border-white/30">

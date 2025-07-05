@@ -14,6 +14,15 @@ import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
 import { Globe, Home, Users } from 'lucide-react';
+import { 
+  trackWorldSelection, 
+  trackRoomEvents, 
+  trackFileTransfer, 
+  trackUserInteraction,
+  trackError,
+  trackPrivacyEvents 
+} from '../utils/analytics';
+import { AnalyticsDebug } from '../components/AnalyticsDebug';
 
 const WORLD_OPTIONS = [
   { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open space, send to anyone' },
@@ -85,10 +94,14 @@ export const AppPage: React.FC = () => {
 
   const handlePeerClick = (peer: Peer) => {
     setSelectedPeer(peer);
+    trackUserInteraction.peerSelected();
   };
 
   const handleSendFiles = async (files: File[], peer: Peer) => {
     try {
+      // Track file transfer started
+      trackFileTransfer.started(files.length, selectedWorld || 'unknown');
+      
       // Send each file individually
       for (const file of files) {
         await sendFile(file, peer);
@@ -98,6 +111,7 @@ export const AppPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to send files:', error);
       addToast('error', `Failed to send files to ${peer.name}`);
+      trackError('file_transfer', `Failed to send files to ${peer.name}`);
     }
   };
 
@@ -112,13 +126,15 @@ export const AppPage: React.FC = () => {
       if ((transfer.status === 'completed' || transfer.status === 'failed') && !shownTransferToasts.current.has(transfer.id)) {
         if (transfer.status === 'completed') {
           addToast('success', `File transfer completed!`);
+          trackFileTransfer.completed(transfer.file.size, selectedWorld || 'unknown');
         } else if (transfer.status === 'failed') {
           addToast('error', `File transfer failed`);
+          trackFileTransfer.failed(selectedWorld || 'unknown');
         }
         shownTransferToasts.current.add(transfer.id);
       }
     });
-  }, [transfers]);
+  }, [transfers, selectedWorld]);
 
   const handleClearSelection = () => {
     setSelectedFiles([]);
@@ -131,11 +147,13 @@ export const AppPage: React.FC = () => {
 
   const handleFilesSelected = (files: File[]) => {
     setSelectedFiles(prev => [...prev, ...files]);
+    trackUserInteraction.fileSelected(files.length);
   };
 
   const handleProfileUpdate = (profile: { name: string; emoji: string; color: string }) => {
     setCurrentUser(prev => ({ ...prev, ...profile }));
     updateProfile(profile.name, profile.color, profile.emoji);
+    trackUserInteraction.profileUpdated();
   };
 
   const ZipPreview: React.FC<{ file: File }> = ({ file }) => {
@@ -182,6 +200,15 @@ export const AppPage: React.FC = () => {
   };
 
   const handleWorldSelect = (world: WorldType) => {
+    // Track world selection
+    if (world === 'jungle') {
+      trackWorldSelection.jungle();
+    } else if (world === 'room') {
+      trackWorldSelection.room();
+    } else if (world === 'family') {
+      trackWorldSelection.family();
+    }
+    
     if (world === 'room') {
       setShowRoomModal(true);
       setPendingWorld(world);
@@ -199,6 +226,7 @@ export const AppPage: React.FC = () => {
       joinRoom(roomId, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
       setSelectedWorld('room');
       setPendingWorld(null);
+      trackRoomEvents.joined(roomId);
     }
   };
 
@@ -394,7 +422,12 @@ const filteredPeers = React.useMemo(() => {
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  onChange={e => {
+                    setSearchQuery(e.target.value);
+                    if (e.target.value.length > 0) {
+                      trackUserInteraction.searchUsed();
+                    }
+                  }}
                   placeholder={
                     selectedWorld === 'jungle' 
                       ? "Search by name or user ID..." 
@@ -483,6 +516,7 @@ const filteredPeers = React.useMemo(() => {
 
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      <AnalyticsDebug />
     </div>
   );
 };

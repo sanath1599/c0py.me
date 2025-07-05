@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from './GlassCard';
 import { Avatar } from './Avatar';
 import { CubProgress } from './CubProgress';
 import { Peer, FileTransfer } from '../types';
 import { formatFileSize, formatSpeed, formatTime } from '../utils/format';
-import { Send, X, CheckCircle, AlertCircle, Loader, Download, File } from 'lucide-react';
+import { Send, X, CheckCircle, AlertCircle, Loader, Download, File, Upload, Users, Search } from 'lucide-react';
 import { IncomingFileModal } from './IncomingFileModal';
+import { trackUserInteraction } from '../utils/analytics';
 
 interface LionsDenProps {
   peers: Peer[];
@@ -63,22 +64,24 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     setDenPulse(hasActiveTransfers);
   }, [transfers]);
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
+      const handleDragOver = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(true);
+      trackUserInteraction.dragDrop();
+    };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    onFilesSelected(files);
-  };
+      const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const files = Array.from(e.dataTransfer.files);
+      onFilesSelected(files);
+      trackUserInteraction.dragDrop();
+    };
 
   const handleClick = () => {
     const input = document.createElement('input');
@@ -89,6 +92,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
       onFilesSelected(files);
     };
     input.click();
+    trackUserInteraction.fileSelected(1);
   };
 
   const handleSend = () => {
