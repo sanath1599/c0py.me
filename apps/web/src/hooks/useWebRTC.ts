@@ -31,8 +31,10 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
   }>>([]);
 
   const createPeerConnection = useCallback((peerId: string) => {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    
+    // Always create a new connection
+    const pc = new RTCPeerConnection({
+      iceServers: ICE_SERVERS
+    });
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         onSignal(peerId, userId, {
@@ -41,25 +43,30 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
         });
       }
     };
-
     pc.onconnectionstatechange = () => {
       console.log(`🔗 Connection state with ${peerId}:`, pc.connectionState);
-      
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        // Update transfer status to failed
-        setTransfers(prev => prev.map(t => 
-          t.peer.id === peerId && t.status === 'connecting' ? { ...t, status: 'failed' } : t
-        ));
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
+        removeConnection(peerId);
       }
     };
-
     pc.oniceconnectionstatechange = () => {
       console.log(`🧊 ICE connection state with ${peerId}:`, pc.iceConnectionState);
     };
-
-    setConnections(prev => new Map(prev).set(peerId, pc));
+    setConnections(prev => {
+      const newMap = new Map(prev);
+      newMap.set(peerId, pc);
+      return newMap;
+    });
     return pc;
   }, [onSignal, userId]);
+
+  const removeConnection = (peerId: string) => {
+    setConnections(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(peerId);
+      return newMap;
+    });
+  };
 
   const sendFile = useCallback(async (file: File, peer: Peer) => {
     const transferId = `${Date.now()}-${Math.random()}`;
@@ -70,23 +77,16 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
       status: 'pending',
       progress: 0
     };
-
     setTransfers(prev => [...prev, transfer]);
-
     try {
-      let pc = connections.get(peer.id);
-      if (!pc) {
-        pc = createPeerConnection(peer.id);
-      }
-
+      // Always create a new connection for each transfer
+      const pc = createPeerConnection(peer.id);
       // Create data channel
       const dataChannel = pc.createDataChannel('file-transfer', {
         ordered: true
       });
-
       dataChannel.onopen = () => {
         console.log('📤 Data channel opened for sending');
-        
         // Send file request first
         dataChannel.send(JSON.stringify({
           type: 'file-request',
@@ -95,26 +95,23 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
           fileType: file.type,
           transferId: transferId
         }));
-        
         // Store pending file for when receiver accepts
         pendingFilesRef.current.set(transferId, { file, peer, transferId });
       };
-
       dataChannel.onmessage = (event) => {
         if (typeof event.data === 'string') {
           try {
             const message = JSON.parse(event.data);
             if (message.type === 'file-accepted' && message.transferId === transferId) {
               console.log('📤 File accepted, starting transfer');
-              setTransfers(prev => prev.map(t => 
+              setTransfers(prev => prev.map(t =>
                 t.id === transferId ? { ...t, status: 'transferring' } : t
               ));
-              
               // Start file transfer
               sendFileInChunks(dataChannel, file, transferId);
             } else if (message.type === 'file-rejected' && message.transferId === transferId) {
               console.log('📤 File rejected');
-              setTransfers(prev => prev.map(t => 
+              setTransfers(prev => prev.map(t =>
                 t.id === transferId ? { ...t, status: 'cancelled' } : t
               ));
               pendingFilesRef.current.delete(transferId);
@@ -124,38 +121,34 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
           }
         }
       };
-
       dataChannel.onerror = (error) => {
         console.error('❌ Data channel error:', error);
-        setTransfers(prev => prev.map(t => 
+        setTransfers(prev => prev.map(t =>
           t.id === transferId ? { ...t, status: 'failed' } : t
         ));
       };
-
       dataChannel.onclose = () => {
         console.log('📤 Data channel closed');
+        // Remove closed connection
+        removeConnection(peer.id);
       };
-
       dataChannelsRef.current.set(peer.id, dataChannel);
-
       // Create offer
       console.log(`📤 Creating offer for ${peer.id}`);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      
       console.log(`📤 Sending offer to ${peer.id}`);
       onSignal(peer.id, userId, {
         type: 'offer',
         sdp: offer
       });
-
     } catch (error) {
       console.error('❌ Error sending file:', error);
-      setTransfers(prev => prev.map(t => 
+      setTransfers(prev => prev.map(t =>
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
     }
-  }, [connections, createPeerConnection, onSignal, userId]);
+  }, [createPeerConnection, onSignal, userId]);
 
   const sendFileInChunks = (dataChannel: RTCDataChannel, file: File, transferId: string) => {
     const reader = new FileReader();
