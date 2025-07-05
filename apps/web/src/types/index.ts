@@ -4,6 +4,7 @@ export interface Peer {
   emoji: string;
   color: string;
   isOnline: boolean;
+  roomId?: string;
 }
 
 export interface FileTransfer {

@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { LionsDen } from '../components/LionsDen';
 import { ProfileModal } from '../components/ProfileModal';
+import { RoomModal } from '../components/RoomModal';
+import { FamilyPrivacyNotice } from '../components/FamilyPrivacyNotice';
 import { ToastContainer, Toast } from '../components/Toast';
 import { useSocket } from '../hooks/useSocket';
 import { useWebRTC } from '../hooks/useWebRTC';
@@ -30,7 +32,7 @@ export const AppPage: React.FC = () => {
     color: getRandomColor()
   });
 
-  const { isConnected, peers, joinDefaultRoom, updateProfile, sendSignal, onSignal } = useSocket();
+  const { isConnected, peers, currentRoom, publicIp, joinRoom, joinDefaultRoom, joinFamilyRoom, updateProfile, sendSignal, onSignal } = useSocket();
   const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id);
 
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -39,6 +41,10 @@ export const AppPage: React.FC = () => {
   const shownTransferToasts = useRef(new Set<string>());
 
   const [selectedWorld, setSelectedWorld] = useState<WorldType | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showRoomModal, setShowRoomModal] = useState(false);
+  const [showFamilyNotice, setShowFamilyNotice] = useState(false);
+  const [pendingWorld, setPendingWorld] = useState<WorldType | null>(null);
 
   // Set up signal handling once
   useEffect(() => {
@@ -51,10 +57,10 @@ export const AppPage: React.FC = () => {
 
   // Join default jungle room when connection is established
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && selectedWorld === 'jungle') {
       joinDefaultRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
     }
-  }, [isConnected, currentUser, joinDefaultRoom]);
+  }, [isConnected, selectedWorld, currentUser, joinDefaultRoom]);
 
   // Show modal when a new completed transfer is added
   useEffect(() => {
@@ -173,6 +179,41 @@ export const AppPage: React.FC = () => {
     );
   };
 
+  const handleWorldSelect = (world: WorldType) => {
+    if (world === 'room') {
+      setShowRoomModal(true);
+      setPendingWorld(world);
+    } else if (world === 'family') {
+      setShowFamilyNotice(true);
+      setPendingWorld(world);
+    } else {
+      // Jungle - direct selection
+      setSelectedWorld(world);
+    }
+  };
+
+  const handleRoomJoin = (roomId: string) => {
+    if (isConnected && pendingWorld === 'room') {
+      joinRoom(roomId, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+      setSelectedWorld('room');
+      setPendingWorld(null);
+    }
+  };
+
+  const handleFamilyAccept = () => {
+    if (isConnected && pendingWorld === 'family') {
+      joinFamilyRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+      setSelectedWorld('family');
+      setPendingWorld(null);
+      setShowFamilyNotice(false);
+    }
+  };
+
+  const handleFamilyDecline = () => {
+    setPendingWorld(null);
+    setShowFamilyNotice(false);
+  };
+
   const WorldSwitcher: React.FC<{ value: WorldType | null; onChange: (w: WorldType) => void }> = ({ value, onChange }) => (
   <div className="flex flex-col items-center justify-center min-h-[60vh]">
     <div className="absolute inset-0 -z-10 bg-gradient-to-br from-orange-100/80 via-amber-100/60 to-white/80" />
@@ -208,14 +249,55 @@ export const AppPage: React.FC = () => {
   </div>
 );
 
+// Filter peers based on selected world
+const filteredPeers = React.useMemo(() => {
+  const otherPeers = peers.filter(p => p.id !== currentUser.id);
+  
+  if (selectedWorld === 'jungle') {
+    return otherPeers.filter(p =>
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.id.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  } else if (selectedWorld === 'room' || selectedWorld === 'family') {
+    // For Room and Family, only show peers in the same room
+    return otherPeers.filter(p => p.roomId === currentRoom);
+  }
+  
+  return otherPeers;
+}, [peers, currentUser.id, searchQuery, selectedWorld, currentRoom]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 relative">
       {/* World Switcher Overlay */}
       {!selectedWorld && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[8px]">
-          <WorldSwitcher value={selectedWorld} onChange={setSelectedWorld} />
+          <WorldSwitcher value={selectedWorld} onChange={handleWorldSelect} />
         </div>
       )}
+
+      {/* Room Modal */}
+      <AnimatePresence>
+        {showRoomModal && (
+          <RoomModal
+            isOpen={showRoomModal}
+            onClose={() => {
+              setShowRoomModal(false);
+              setPendingWorld(null);
+            }}
+            onJoinRoom={handleRoomJoin}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Family Privacy Notice */}
+      <AnimatePresence>
+        {showFamilyNotice && (
+          <FamilyPrivacyNotice
+            onAccept={handleFamilyAccept}
+            onDecline={handleFamilyDecline}
+          />
+        )}
+      </AnimatePresence>
       {/* Modal Overlay */}
       {(showProfileModal || showTransferModal) && (
         <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[8px] transition-all" style={{ WebkitBackdropFilter: 'blur(8px)' }} />
@@ -241,11 +323,40 @@ export const AppPage: React.FC = () => {
               ShareDrop
             </h1>
           </div>
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
-            <span className="text-sm" style={{ color: '#2C1B12', opacity: 0.8 }}>
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
+          <div className="flex items-center gap-4">
+            {/* World Indicator */}
+            {selectedWorld && (
+              <motion.button
+                onClick={() => setSelectedWorld(null)}
+                className="flex items-center gap-2 px-3 py-1 rounded-full transition-all hover:scale-105"
+                style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <span className="text-lg">
+                  {selectedWorld === 'jungle' ? '🌍' : selectedWorld === 'room' ? '🏠' : '👨‍👩‍👧‍👦'}
+                </span>
+                <span className="text-sm font-medium capitalize" style={{ color: '#A6521B' }}>
+                  {selectedWorld}
+                </span>
+                {currentRoom && selectedWorld !== 'jungle' && (
+                  <span className="text-xs font-mono" style={{ color: '#A6521B', opacity: 0.7 }}>
+                    {currentRoom}
+                  </span>
+                )}
+                <span className="text-xs" style={{ color: '#A6521B', opacity: 0.6 }}>
+                  (click to switch)
+                </span>
+              </motion.button>
+            )}
+            
+            {/* Connection Status */}
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+              <span className="text-sm" style={{ color: '#2C1B12', opacity: 0.8 }}>
+                {isConnected ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
           </div>
         </div>
       </motion.header>
@@ -254,13 +365,32 @@ export const AppPage: React.FC = () => {
       {selectedWorld && (
         <main className="p-6">
           <div className="max-w-7xl mx-auto">
+            {/* Search Bar */}
+            {selectedWorld && (
+              <div className="mb-6 flex justify-center">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder={
+                    selectedWorld === 'jungle' 
+                      ? "Search by name or user ID..." 
+                      : selectedWorld === 'room'
+                      ? "Search room members..."
+                      : "Search family members..."
+                  }
+                  className="w-full max-w-md px-4 py-2 rounded-xl border border-orange-200 bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-lg"
+                />
+              </div>
+            )}
             {/* Lions Den - New Layout */}
             <LionsDen
-              peers={peers}
+              peers={filteredPeers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
               selectedFiles={selectedFiles}
               transfers={transfers}
+              currentWorld={selectedWorld}
               incomingFiles={incomingFiles}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}

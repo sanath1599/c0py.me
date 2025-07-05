@@ -12,6 +12,7 @@ interface LionsDenProps {
   selectedPeer: Peer | null;
   selectedFiles: File[];
   transfers: FileTransfer[];
+  currentWorld?: 'jungle' | 'room' | 'family';
   incomingFiles: Array<{
     id: string;
     from: string;
@@ -36,6 +37,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   selectedPeer,
   selectedFiles,
   transfers,
+  currentWorld,
   incomingFiles,
   onPeerClick,
   onSendFiles,
@@ -208,8 +210,16 @@ export const LionsDen: React.FC<LionsDenProps> = ({
             ) : (
               <div className="absolute inset-0 flex items-center justify-center" style={{ zIndex: 1 }}>
                 <div className="text-center bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-sm border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
-                  <p className="text-sm font-medium" style={{ color: '#2C1B12' }}>No cubs in the jungle</p>
-                  <p className="text-xs mt-1" style={{ color: '#A6521B' }}>Waiting for other lions to join</p>
+                  <p className="text-sm font-medium" style={{ color: '#2C1B12' }}>
+                    {currentWorld === 'jungle' ? 'No cubs in the jungle' : 
+                     currentWorld === 'room' ? 'No cubs in the room' :
+                     currentWorld === 'family' ? 'No family members online' : 'No cubs in the den'}
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: '#A6521B' }}>
+                    {currentWorld === 'jungle' ? 'Waiting for other lions to join' :
+                     currentWorld === 'room' ? 'Share the room code with others' :
+                     currentWorld === 'family' ? 'Other devices on your WiFi can join' : 'Waiting for other lions to join'}
+                  </p>
                 </div>
               </div>
             )}

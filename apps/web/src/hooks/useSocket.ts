@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Peer, SocketEvents } from '../types';
+import { Peer } from '../types';
+import { getRandomEmoji, getRandomColor } from '../utils/colors';
 
 // Random name generator
 const randomNames = [
@@ -10,26 +11,32 @@ const randomNames = [
   'Quincy', 'River', 'Sage', 'Tatum', 'Unity', 'Vale', 'Winter', 'Xander'
 ];
 
-// Random emoji generator
-const randomEmojis = ['🦁', '🐯', '🐻', '🐨', '🐼', '🐸', '🐙', '🦄', '🦋', '🐞', '🦅', '🦉', '🦇', '🐺', '🦊', '🐱', '🐶', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🦆', '🦉', '🦇', '🐺', '🦊', '🐱', '🐶', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🦆'];
-
-// Random color generator
-const randomColors = [
-  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8',
-  '#F7DC6F', '#BB8FCE', '#85C1E9', '#F8C471', '#82E0AA', '#F1948A', '#85C1E9',
-  '#D7BDE2', '#F9E79F', '#ABEBC6', '#FAD7A0', '#D5A6BD', '#A9CCE3', '#F8C471',
-  '#82E0AA', '#F1948A', '#85C1E9', '#D7BDE2', '#F9E79F', '#ABEBC6', '#FAD7A0'
-];
-
 const getRandomName = () => randomNames[Math.floor(Math.random() * randomNames.length)];
-const getRandomEmoji = () => randomEmojis[Math.floor(Math.random() * randomEmojis.length)];
-const getRandomColor = () => randomColors[Math.floor(Math.random() * randomColors.length)];
 
 export const useSocket = () => {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [peers, setPeers] = useState<Peer[]>([]);
+  const [currentRoom, setCurrentRoom] = useState<string | null>(null);
+  const [publicIp, setPublicIp] = useState<string | null>(null);
   const joinedRoomsRef = useRef<Set<string>>(new Set()); // Track joined rooms per connection
+
+  // Fetch public IP for Family world
+  useEffect(() => {
+    const fetchPublicIp = async () => {
+      try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        setPublicIp(data.ip);
+      } catch (error) {
+        console.warn('Failed to fetch public IP:', error);
+        // Fallback to a default family room
+        setPublicIp('unknown');
+      }
+    };
+    
+    fetchPublicIp();
+  }, []);
 
   useEffect(() => {
     // Use CLIENT_URL from env, fallback to ws://localhost:3001
@@ -105,10 +112,20 @@ export const useSocket = () => {
     console.log('🚀 Joining room:', room);
     socket.emit('join-room', { room, userId, name, color, emoji });
     joinedRoomsRef.current.add(roomKey);
+    setCurrentRoom(room);
   };
 
   const joinDefaultRoom = (userId: string, name: string, color: string, emoji: string) => {
     joinRoom('jungle', userId, name, color, emoji);
+  };
+
+  const joinFamilyRoom = (userId: string, name: string, color: string, emoji: string) => {
+    if (!publicIp) {
+      console.warn('⚠️ Public IP not available yet, cannot join family room');
+      return;
+    }
+    const familyRoomId = `family-${publicIp}`;
+    joinRoom(familyRoomId, userId, name, color, emoji);
   };
 
   const updateProfile = (name: string, color: string, emoji: string) => {
@@ -146,8 +163,11 @@ export const useSocket = () => {
   return {
     isConnected,
     peers,
+    currentRoom,
+    publicIp,
     joinRoom,
     joinDefaultRoom,
+    joinFamilyRoom,
     updateProfile,
     sendSignal,
     onSignal

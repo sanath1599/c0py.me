@@ -6,13 +6,15 @@ interface GlassCardProps {
   className?: string;
   onClick?: () => void;
   hover?: boolean;
+  style?: React.CSSProperties;
 }
 
 export const GlassCard: React.FC<GlassCardProps> = ({ 
   children, 
   className = '', 
   onClick,
-  hover = false 
+  hover = false,
+  style
 }) => {
   return (
     <motion.div
@@ -24,7 +26,8 @@ export const GlassCard: React.FC<GlassCardProps> = ({
       style={{
         backgroundColor: 'rgba(255, 255, 255, 0.8)',
         borderColor: 'rgba(166, 82, 27, 0.2)',
-        backdropFilter: 'blur(12px)'
+        backdropFilter: 'blur(12px)',
+        ...style
       }}
       onClick={onClick}
       whileHover={hover ? { scale: 1.02, y: -2 } : {}}
