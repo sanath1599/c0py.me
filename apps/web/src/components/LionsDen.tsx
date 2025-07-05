@@ -5,6 +5,7 @@ import { Avatar } from './Avatar';
 import { Peer, FileTransfer } from '../types';
 import { formatFileSize, formatSpeed, formatTime } from '../utils/format';
 import { Send, X, CheckCircle, AlertCircle, Loader, Download, File } from 'lucide-react';
+import { IncomingFileModal } from './IncomingFileModal';
 
 interface LionsDenProps {
   peers: Peer[];
@@ -112,9 +113,18 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     }
   };
 
+  const hasIncomingFile = incomingFiles.length > 0;
+  const currentIncomingFile = hasIncomingFile ? incomingFiles[0] : null;
+
   return (
     <div className="space-y-6">
-            {/* Row 1: Radar, File Selector, and Target Cub */}
+      <IncomingFileModal
+        isOpen={!!currentIncomingFile}
+        file={currentIncomingFile}
+        onAccept={() => onAcceptIncomingFile(currentIncomingFile.id)}
+        onReject={() => onRejectIncomingFile(currentIncomingFile.id)}
+      />
+      {/* Row 1: Radar, File Selector, and Target Cub */}
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Radar - Lion's Den with Cubs */}
         <GlassCard className="p-6 relative overflow-hidden">
@@ -438,68 +448,6 @@ export const LionsDen: React.FC<LionsDenProps> = ({
           <h2 className="text-xl font-bold mb-6" style={{ color: '#2C1B12' }}>Transfer Progress</h2>
           
           <div className="space-y-4">
-            {/* Incoming Files Notifications */}
-            {incomingFiles.length > 0 && (
-              <div className="space-y-3 mb-6">
-                <h3 className="text-lg font-semibold" style={{ color: '#2C1B12' }}>Incoming Files</h3>
-                {incomingFiles.map(incomingFile => (
-                  <motion.div
-                    key={incomingFile.id}
-                    className="p-4 rounded-lg border"
-                    style={{ borderColor: 'rgba(166, 82, 27, 0.15)', backgroundColor: 'rgba(246, 193, 72, 0.05)' }}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  >
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
-                        <svg className="w-4 h-4" style={{ color: '#A6521B' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-sm" style={{ color: '#2C1B12' }}>{incomingFile.fileName}</p>
-                        <p className="text-xs" style={{ color: '#A6521B' }}>
-                          From: {incomingFile.from} • {formatFileSize(incomingFile.fileSize)}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => onAcceptIncomingFile(incomingFile.id)}
-                        className="flex-1 py-2 px-3 text-white rounded-lg font-medium transition-colors"
-                        style={{ backgroundColor: '#F6C148' }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = '#A6521B';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = '#F6C148';
-                        }}
-                      >
-                        Accept
-                      </button>
-                      <button
-                        onClick={() => onRejectIncomingFile(incomingFile.id)}
-                        className="flex-1 py-2 px-3 rounded-lg font-medium transition-colors"
-                        style={{ 
-                          backgroundColor: 'rgba(166, 82, 27, 0.1)',
-                          color: '#A6521B'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)';
-                        }}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-
             {/* Active Transfers */}
             {transfers.length > 0 ? (
               transfers.map(transfer => (
