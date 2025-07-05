@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Settings } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { Avatar } from './Avatar';
@@ -23,16 +22,6 @@ export const Radar: React.FC<RadarProps> = ({
   onJoinRoom
 }) => {
   const [hoveredPeer, setHoveredPeer] = useState<string | null>(null);
-
-  const getRadarPosition = (index: number, total: number) => {
-    const angle = (index * 2 * Math.PI) / total;
-    const radius = 80;
-    const x = Math.cos(angle) * radius;
-    const y = Math.sin(angle) * radius;
-    return { x, y };
-  };
-
-  // Filter out current user from peers
   const otherPeers = peers.filter(peer => peer.id !== currentUser.id);
 
   return (
@@ -43,16 +32,9 @@ export const Radar: React.FC<RadarProps> = ({
           <button
             onClick={onEditProfile}
             className="p-2 rounded-lg transition-colors"
-            style={{ 
-              backgroundColor: 'rgba(166, 82, 27, 0.1)',
-              color: '#A6521B'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)';
-            }}
+            style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)', color: '#A6521B' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
           >
             <Settings size={16} />
           </button>
@@ -60,126 +42,55 @@ export const Radar: React.FC<RadarProps> = ({
             onClick={onJoinRoom}
             className="p-2 rounded-lg text-white transition-colors"
             style={{ backgroundColor: '#F6C148' }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#A6521B';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#F6C148';
-            }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#A6521B')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#F6C148')}
           >
             <Plus size={16} />
           </button>
         </div>
       </div>
 
-      {/* Debug info */}
-      <div className="text-xs mb-4 p-2 rounded" style={{ backgroundColor: 'rgba(166, 82, 27, 0.05)' }}>
-        <div style={{ color: '#2C1B12' }}>
-          <div>Total peers: {peers.length}</div>
-          <div>Other peers: {otherPeers.length}</div>
-          <div>Current user: {currentUser.name} ({currentUser.id})</div>
-          {otherPeers.map(peer => (
-            <div key={peer.id}>- {peer.name} ({peer.id})</div>
-          ))}
-        </div>
-      </div>
-
-      <div className="relative w-64 h-64 mx-auto">
-        {/* Radar circles */}
-        <div className="absolute inset-0 rounded-full border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }} />
-        <div className="absolute inset-4 rounded-full border" style={{ borderColor: 'rgba(166, 82, 27, 0.1)' }} />
-        <div className="absolute inset-8 rounded-full border" style={{ borderColor: 'rgba(166, 82, 27, 0.05)' }} />
-
-        {/* Current user in center */}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-          <Avatar
-            emoji={currentUser.emoji}
-            color={currentUser.color}
-            size="lg"
-          />
-          <div className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
-            <div className="bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
-              <span className="text-sm font-medium" style={{ color: '#2C1B12' }}>You</span>
+      <div className="relative w-64 h-64 mx-auto flex items-center justify-center">
+        {/* Ring of peers */}
+        {otherPeers.length > 0 ? (
+          <div className="absolute w-full h-full flex items-center justify-center">
+            <div className="relative w-full h-full" style={{ minWidth: 256, minHeight: 256 }}>
+              {otherPeers.map((peer, idx) => {
+                const angle = (idx / otherPeers.length) * 2 * Math.PI;
+                const radius = 110;
+                const x = Math.cos(angle - Math.PI / 2) * radius + 128 - 32; // center + offset - half avatar
+                const y = Math.sin(angle - Math.PI / 2) * radius + 128 - 32;
+                const isSelected = selectedPeer?.id === peer.id;
+                return (
+                  <div
+                    key={peer.id}
+                    className="absolute"
+                    style={{ left: x, top: y, zIndex: isSelected ? 20 : 10 }}
+                    onMouseEnter={() => setHoveredPeer(peer.id)}
+                    onMouseLeave={() => setHoveredPeer(null)}
+                  >
+                    <div className="relative">
+                      <Avatar
+                        emoji={peer.emoji}
+                        color={peer.color}
+                        size="lg"
+                        onClick={() => onPeerClick(peer)}
+                        isOnline={peer.isOnline}
+                        className={isSelected ? 'ring-4 ring-yellow-400' : 'hover:ring-2 hover:ring-yellow-300 cursor-pointer'}
+                      />
+                      {/* Tooltip */}
+                      {hoveredPeer === peer.id && (
+                        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2 py-1 rounded bg-black/80 text-white text-xs whitespace-nowrap z-30">
+                          {peer.name}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </div>
-
-        {/* Peers around the circle */}
-        <AnimatePresence>
-          {otherPeers.map((peer, index) => {
-            const { x, y } = getRadarPosition(index, otherPeers.length);
-            const isSelected = selectedPeer?.id === peer.id;
-            
-            return (
-              <motion.div
-                key={peer.id}
-                className="absolute top-1/2 left-1/2"
-                style={{
-                  transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`
-                }}
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                onHoverStart={() => setHoveredPeer(peer.id)}
-                onHoverEnd={() => setHoveredPeer(null)}
-              >
-                <div className="relative">
-                  <Avatar
-                    emoji={peer.emoji}
-                    color={peer.color}
-                    size="md"
-                    onClick={() => {
-                      console.log('Peer clicked:', peer);
-                      onPeerClick(peer);
-                    }}
-                    isOnline={peer.isOnline}
-                  />
-                  
-                  {/* Selection indicator */}
-                  {isSelected && (
-                    <motion.div
-                      className="absolute -inset-2 rounded-full border-2"
-                      style={{ borderColor: '#F6C148' }}
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ duration: 0.2 }}
-                    />
-                  )}
-                </div>
-                
-                {/* Peer name tooltip */}
-                <AnimatePresence>
-                  {hoveredPeer === peer.id && (
-                    <motion.div
-                      className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
-                      initial={{ opacity: 0, y: -5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -5 }}
-                    >
-                      <div className="text-xs px-2 py-1 rounded text-white" style={{ backgroundColor: 'rgba(44, 27, 18, 0.8)' }}>
-                        {peer.name}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Pulse animation for online peers */}
-                {peer.isOnline && (
-                  <motion.div
-                    className="absolute inset-0 rounded-full border-2"
-                    style={{ borderColor: 'rgba(246, 193, 72, 0.3)' }}
-                    animate={{ scale: [1, 1.5], opacity: [0.5, 0] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                  />
-                )}
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-
-        {/* No peers message */}
-        {otherPeers.length === 0 && (
+        ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-sm border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
               <p className="text-sm font-medium" style={{ color: '#2C1B12' }}>No devices nearby</p>
@@ -187,6 +98,17 @@ export const Radar: React.FC<RadarProps> = ({
             </div>
           </div>
         )}
+        {/* Center user */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center">
+          <Avatar
+            emoji={currentUser.emoji}
+            color={currentUser.color}
+            size="xl"
+          />
+          <div className="mt-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
+            <span className="text-sm font-medium" style={{ color: '#2C1B12' }}>You</span>
+          </div>
+        </div>
       </div>
     </GlassCard>
   );

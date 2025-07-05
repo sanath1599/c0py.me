@@ -2,6 +2,29 @@ import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Peer, SocketEvents } from '../types';
 
+// Random name generator
+const randomNames = [
+  'Alex', 'Sam', 'Jordan', 'Taylor', 'Casey', 'Riley', 'Quinn', 'Avery',
+  'Morgan', 'Drew', 'Blake', 'Cameron', 'Dakota', 'Emery', 'Finley', 'Harper',
+  'Indigo', 'Jules', 'Kai', 'Logan', 'Mason', 'Nova', 'Ocean', 'Parker',
+  'Quincy', 'River', 'Sage', 'Tatum', 'Unity', 'Vale', 'Winter', 'Xander'
+];
+
+// Random emoji generator
+const randomEmojis = ['🦁', '🐯', '🐻', '🐨', '🐼', '🐸', '🐙', '🦄', '🦋', '🐞', '🦅', '🦉', '🦇', '🐺', '🦊', '🐱', '🐶', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🦆', '🦉', '🦇', '🐺', '🦊', '🐱', '🐶', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🦆'];
+
+// Random color generator
+const randomColors = [
+  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8',
+  '#F7DC6F', '#BB8FCE', '#85C1E9', '#F8C471', '#82E0AA', '#F1948A', '#85C1E9',
+  '#D7BDE2', '#F9E79F', '#ABEBC6', '#FAD7A0', '#D5A6BD', '#A9CCE3', '#F8C471',
+  '#82E0AA', '#F1948A', '#85C1E9', '#D7BDE2', '#F9E79F', '#ABEBC6', '#FAD7A0'
+];
+
+const getRandomName = () => randomNames[Math.floor(Math.random() * randomNames.length)];
+const getRandomEmoji = () => randomEmojis[Math.floor(Math.random() * randomEmojis.length)];
+const getRandomColor = () => randomColors[Math.floor(Math.random() * randomColors.length)];
+
 export const useSocket = () => {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -32,12 +55,26 @@ export const useSocket = () => {
 
     socket.on('peers', (peerList: Peer[]) => {
       console.log('📡 Received peers:', peerList.length);
-      setPeers(peerList);
+      // Ensure each peer has random properties if they don't exist
+      const peersWithRandomProps = peerList.map(peer => ({
+        ...peer,
+        name: peer.name || getRandomName(),
+        emoji: peer.emoji || getRandomEmoji(),
+        color: peer.color || getRandomColor()
+      }));
+      setPeers(peersWithRandomProps);
     });
 
     socket.on('peer-joined', (peer: Peer) => {
       console.log('👥 Peer joined:', peer.name);
-      setPeers(prev => [...prev.filter(p => p.id !== peer.id), peer]);
+      // Ensure the peer has random properties
+      const peerWithRandomProps = {
+        ...peer,
+        name: peer.name || getRandomName(),
+        emoji: peer.emoji || getRandomEmoji(),
+        color: peer.color || getRandomColor()
+      };
+      setPeers(prev => [...prev.filter(p => p.id !== peer.id), peerWithRandomProps]);
     });
 
     socket.on('peer-left', (peerId: string) => {

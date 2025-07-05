@@ -27,7 +27,7 @@ export const AppPage: React.FC = () => {
   const [roomCode, setRoomCode] = useState<string | null>(null);
 
   const { isConnected, peers, joinRoom, updateProfile, sendSignal, onSignal } = useSocket();
-  const { transfers, sendFiles, handleSignal, cancelTransfer } = useWebRTC(sendSignal, currentUser.id);
+  const { transfers, sendFile, handleSignal, cancelTransfer } = useWebRTC(sendSignal, currentUser.id);
 
   // Set up signal handling once
   useEffect(() => {
@@ -39,12 +39,9 @@ export const AppPage: React.FC = () => {
   }, [onSignal, handleSignal]);
 
   // Handle room joining when room code changes
-  const handleJoinRoom = (code: string) => {
-    setRoomCode(code);
-    // Join room will be called by the socket hook when connected
-    if (isConnected) {
-      joinRoom(code, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
-    }
+  const handleJoinRoom = (roomCode: string) => {
+    setRoomCode(roomCode);
+    joinRoom(roomCode, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
   };
 
   // Join room when connection is established and we have a room code
@@ -60,8 +57,12 @@ export const AppPage: React.FC = () => {
 
   const handleSendFiles = async (files: File[], peer: Peer) => {
     try {
-      await sendFiles(files, peer);
+      // Send each file individually
+      for (const file of files) {
+        await sendFile(file, peer);
+      }
       addToast('success', `Sending ${files.length} file(s) to ${peer.name}...`);
+      setSelectedFiles([]); // Clear selection after sending
     } catch (error) {
       console.error('Failed to send files:', error);
       addToast('error', `Failed to send files to ${peer.name}`);
@@ -113,29 +114,42 @@ export const AppPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 p-4">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center"
-        >
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <LionIcon className="w-8 h-8" />
-            <h1 className="text-3xl font-bold" style={{ color: '#2C1B12' }}>
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100">
+      {/* Navbar with animated logo */}
+      <motion.header
+        className="p-6 border-b"
+        style={{ borderColor: 'rgba(166, 82, 27, 0.1)' }}
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+      >
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <motion.img
+              src="/favicon.gif"
+              alt="ShareDrop Lion Logo"
+              className="w-10 h-10"
+              animate={{ rotate: [0, 10, -10, 0] }}
+              transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+            />
+            <h1 className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
               ShareDrop
             </h1>
           </div>
-          <p className="text-sm" style={{ color: '#A6521B' }}>
-            Secure peer-to-peer file sharing
-          </p>
-        </motion.div>
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+            <span className="text-sm" style={{ color: '#2C1B12', opacity: 0.8 }}>
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </span>
+          </div>
+        </div>
+      </motion.header>
 
-        {/* Main content */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left column: Radar and File Sharing */}
-          <div className="space-y-6">
+      {/* Main content */}
+      <main className="p-6">
+        <div className="max-w-7xl mx-auto space-y-6">
+          {/* Radar and Upload Circle */}
+          <div className="grid lg:grid-cols-2 gap-6">
             {/* Radar */}
             <Radar
               peers={peers}
@@ -146,27 +160,27 @@ export const AppPage: React.FC = () => {
               onJoinRoom={() => setShowRoomModal(true)}
             />
 
-            {/* File Sharing - moved below Radar */}
-            <FileSharing
-              selectedFiles={selectedFiles}
-              selectedPeer={selectedPeer}
-              transfers={transfers}
-              onSendFiles={handleSendFiles}
-              onCancelTransfer={handleCancelTransfer}
-              onClearSelection={handleClearSelection}
-            />
+            {/* Upload Circle */}
+            <div className="flex items-start justify-center">
+              <UploadCircle
+                onFilesSelected={handleFilesSelected}
+                selectedFiles={selectedFiles}
+                onFileRemove={handleFileRemove}
+              />
+            </div>
           </div>
 
-          {/* Right column: Upload Circle */}
-          <div className="flex items-start justify-center">
-            <UploadCircle
-              onFilesSelected={handleFilesSelected}
-              selectedFiles={selectedFiles}
-              onFileRemove={handleFileRemove}
-            />
-          </div>
+          {/* File Sharing - Full Width */}
+          <FileSharing
+            selectedFiles={selectedFiles}
+            selectedPeer={selectedPeer}
+            transfers={transfers}
+            onSendFiles={handleSendFiles}
+            onCancelTransfer={handleCancelTransfer}
+            onClearSelection={handleClearSelection}
+          />
         </div>
-      </div>
+      </main>
 
       {/* Modals */}
       <RoomModal
@@ -181,6 +195,9 @@ export const AppPage: React.FC = () => {
         currentProfile={currentUser}
         onSave={handleProfileUpdate}
       />
+
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
 };
