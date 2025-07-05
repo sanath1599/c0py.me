@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Peer } from '../types';
 import { getRandomEmoji, getRandomColor } from '../utils/colors';
+import { generateRandomUsername } from '../utils/names';
 
 // Random name generator
 const randomNames = [
@@ -66,7 +67,7 @@ export const useSocket = () => {
       // Ensure each peer has random properties if they don't exist
       const peersWithRandomProps = peerList.map(peer => ({
         ...peer,
-        name: peer.name || getRandomName(),
+        name: peer.name || generateRandomUsername(),
         emoji: peer.emoji || getRandomEmoji(),
         color: peer.color || getRandomColor()
       }));
@@ -78,7 +79,7 @@ export const useSocket = () => {
       // Ensure the peer has random properties
       const peerWithRandomProps = {
         ...peer,
-        name: peer.name || getRandomName(),
+        name: peer.name || generateRandomUsername(),
         emoji: peer.emoji || getRandomEmoji(),
         color: peer.color || getRandomColor()
       };

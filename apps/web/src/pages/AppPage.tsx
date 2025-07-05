@@ -9,6 +9,7 @@ import { useSocket } from '../hooks/useSocket';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { Peer } from '../types';
 import { getRandomColor, getRandomEmoji } from '../utils/colors';
+import { generateRandomUsername } from '../utils/names';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
@@ -26,15 +27,34 @@ export const AppPage: React.FC = () => {
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [currentUser, setCurrentUser] = useState({
+  const [currentUser, setCurrentUser] = useState(() => ({
     id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    name: 'Anonymous',
+    name: generateRandomUsername(),
     emoji: getRandomEmoji(),
-    color: getRandomColor()
-  });
+    color: getRandomColor(),
+  }));
+
+  // Toast management
+  const addToast = (type: 'success' | 'error' | 'info', message: string) => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    setToasts(prev => [...prev, { id, type, message }]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
 
   const { isConnected, peers, currentRoom, publicIp, joinRoom, joinDefaultRoom, joinFamilyRoom, updateProfile, sendSignal, onSignal } = useSocket();
-  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id);
+  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id, addToast, peers);
+
+  // Set up signal handling once
+  useEffect(() => {
+    const cleanup = onSignal((from, data) => {
+      handleSignal(from, data);
+    });
+    
+    return cleanup;
+  }, [onSignal, handleSignal]);
 
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [activeTransfer, setActiveTransfer] = useState<null | typeof completedReceived[0]>(null);
@@ -46,15 +66,6 @@ export const AppPage: React.FC = () => {
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showFamilyNotice, setShowFamilyNotice] = useState(false);
   const [pendingWorld, setPendingWorld] = useState<WorldType | null>(null);
-
-  // Set up signal handling once
-  useEffect(() => {
-    const cleanup = onSignal((from, data) => {
-      handleSignal(from, data);
-    });
-    
-    return cleanup;
-  }, [onSignal, handleSignal]);
 
   // Join default jungle room when connection is established
   useEffect(() => {
@@ -125,16 +136,6 @@ export const AppPage: React.FC = () => {
   const handleProfileUpdate = (profile: { name: string; emoji: string; color: string }) => {
     setCurrentUser(prev => ({ ...prev, ...profile }));
     updateProfile(profile.name, profile.color, profile.emoji);
-  };
-
-  // Toast management
-  const addToast = (type: 'success' | 'error' | 'info', message: string) => {
-    const id = `toast-${Date.now()}-${Math.random()}`;
-    setToasts(prev => [...prev, { id, type, message }]);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
   const ZipPreview: React.FC<{ file: File }> = ({ file }) => {
@@ -221,11 +222,11 @@ export const AppPage: React.FC = () => {
     <div className="absolute inset-0 -z-10 bg-gradient-to-br from-orange-100/80 via-amber-100/60 to-white/80" />
     <img
       src="/favicon.gif"
-      alt="ShareDrop Lion Logo"
-      className="w-20 h-20 mb-4 drop-shadow-xl animate-bounce-slow"
-      style={{ filter: 'drop-shadow(0 4px 24px #A6521B44)' }}
+      alt="c0py.me Lion Logo"
+      className="w-32 h-32 mb-6 drop-shadow-2xl animate-bounce-slow"
+      style={{ filter: 'drop-shadow(0 8px 32px #A6521B66)' }}
     />
-    <h2 className="text-3xl font-bold mb-8 tracking-tight" style={{ color: '#A6521B', textShadow: '0 2px 16px #fff8' }}>Welcome to ShareDrop</h2>
+    <h2 className="text-4xl font-bold mb-8 tracking-tight" style={{ color: '#A6521B', textShadow: '0 2px 16px #fff8' }}>Welcome to c0py.me</h2>
     <div className="flex flex-wrap gap-8 mb-4 justify-center">
       {WORLD_OPTIONS.map(opt => (
         <button

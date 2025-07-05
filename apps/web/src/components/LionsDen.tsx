@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from './GlassCard';
 import { Avatar } from './Avatar';
+import { CubProgress } from './CubProgress';
 import { Peer, FileTransfer } from '../types';
 import { formatFileSize, formatSpeed, formatTime } from '../utils/format';
 import { Send, X, CheckCircle, AlertCircle, Loader, Download, File } from 'lucide-react';
@@ -121,8 +122,16 @@ export const LionsDen: React.FC<LionsDenProps> = ({
       <IncomingFileModal
         isOpen={!!currentIncomingFile}
         file={currentIncomingFile}
-        onAccept={() => onAcceptIncomingFile(currentIncomingFile.id)}
-        onReject={() => onRejectIncomingFile(currentIncomingFile.id)}
+        onAccept={() => {
+          if (currentIncomingFile) {
+            onAcceptIncomingFile(currentIncomingFile.id);
+          }
+        }}
+        onReject={() => {
+          if (currentIncomingFile) {
+            onRejectIncomingFile(currentIncomingFile.id);
+          }
+        }}
       />
       {/* Row 1: Radar, File Selector, and Target Cub */}
       <div className="grid lg:grid-cols-3 gap-6">
@@ -443,110 +452,66 @@ export const LionsDen: React.FC<LionsDenProps> = ({
 
       {/* Row 2: Transfer Progress */}
       <div className="grid lg:grid-cols-1 gap-6">
-        {/* Transfer Progress and Incoming Files */}
+        {/* Transfer Progress */}
         <GlassCard className="p-6">
-          <h2 className="text-xl font-bold mb-6" style={{ color: '#2C1B12' }}>Transfer Progress</h2>
+          <h2 className="text-xl font-bold mb-6" style={{ color: '#2C1B12' }}>
+            Transfer Progress
+          </h2>
           
-          <div className="space-y-4">
-            {/* Active Transfers */}
-            {transfers.length > 0 ? (
-              transfers.map(transfer => (
-                <motion.div
+          {transfers.length === 0 ? (
+            <div className="text-center py-8">
+              <File className="w-12 h-12 mx-auto mb-4 text-orange-400/60" />
+              <p className="text-orange-700/80">No active transfers</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {transfers.map((transfer) => (
+                <div
                   key={transfer.id}
-                  className="p-4 rounded-lg border"
-                  style={{ borderColor: 'rgba(166, 82, 27, 0.15)' }}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-lg bg-white/40 border border-orange-100/60 backdrop-blur-sm"
                 >
-                  <div className="flex items-center gap-3 mb-3">
-                    {getStatusIcon(transfer.status)}
-                    <div className="flex-1">
-                      <p className="font-medium text-sm" style={{ color: '#2C1B12' }}>{transfer.file.name}</p>
-                      <p className="text-xs" style={{ color: '#A6521B' }}>To: {transfer.peer.name}</p>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold truncate" style={{ color: '#2C1B12' }}>
+                        {transfer.file.name}
+                      </h3>
+                      <p className="text-sm text-orange-700/80">
+                        To: {transfer.peer.name}
+                      </p>
                     </div>
-                    {transfer.status === 'transferring' && (
-                      <button
-                        className="p-1 rounded hover:bg-red-100"
-                        onClick={() => onCancelTransfer(transfer.id)}
-                        title="Cancel transfer"
-                      >
-                        <X size={16} className="text-red-500" />
-                      </button>
-                    )}
-                  </div>
-                  
-                  {/* Fiery Progress Bar */}
-                  <div className="relative w-full h-4 bg-gray-200 rounded-full overflow-hidden">
-                    <motion.div
-                      className="h-full rounded-full relative"
-                      style={{
-                        background: 'linear-gradient(90deg, #FF6B35, #F7931E, #FFD700)',
-                        width: `${transfer.progress || 0}%`
-                      }}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${transfer.progress || 0}%` }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      {/* Fire particles effect */}
+                    <div className="flex items-center gap-2">
+                      {getStatusIcon(transfer.status)}
                       {transfer.status === 'transferring' && (
-                        <motion.div
-                          className="absolute inset-0"
-                          animate={{
-                            background: [
-                              'linear-gradient(90deg, #FF6B35, #F7931E, #FFD700)',
-                              'linear-gradient(90deg, #FFD700, #FF6B35, #F7931E)',
-                              'linear-gradient(90deg, #F7931E, #FFD700, #FF6B35)',
-                              'linear-gradient(90deg, #FF6B35, #F7931E, #FFD700)'
-                            ]
-                          }}
-                          transition={{ duration: 0.5, repeat: Infinity }}
-                        />
+                        <button
+                          onClick={() => onCancelTransfer(transfer.id)}
+                          className="p-1 rounded-full hover:bg-orange-100 text-orange-600 transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
                       )}
-                    </motion.div>
-                    
-                    {/* Fire sparkles */}
-                    {transfer.status === 'transferring' && (
-                      <motion.div
-                        className="absolute inset-0"
-                        animate={{
-                          background: [
-                            'radial-gradient(circle at 20% 50%, rgba(255, 215, 0, 0.8) 0%, transparent 50%)',
-                            'radial-gradient(circle at 80% 50%, rgba(255, 215, 0, 0.8) 0%, transparent 50%)',
-                            'radial-gradient(circle at 50% 20%, rgba(255, 215, 0, 0.8) 0%, transparent 50%)',
-                            'radial-gradient(circle at 20% 50%, rgba(255, 215, 0, 0.8) 0%, transparent 50%)'
-                          ]
-                        }}
-                        transition={{ duration: 0.8, repeat: Infinity }}
-                      />
-                    )}
+                    </div>
                   </div>
                   
-                  {/* Progress info */}
-                  <div className="flex justify-between items-center mt-2">
-                    <span className="text-xs font-medium" style={{ color: '#2C1B12' }}>
-                      {Math.round(transfer.progress || 0)}%
-                    </span>
-                    {transfer.status === 'transferring' && (
-                      <div className="text-xs" style={{ color: '#A6521B' }}>
-                        {transfer.speed ? `${formatSpeed(transfer.speed)}` : ''}
-                        {transfer.timeRemaining ? ` • ${formatTime(transfer.timeRemaining)}` : ''}
-                      </div>
+                  {/* Cub Progress Bar */}
+                  <CubProgress 
+                    progress={transfer.progress || 0}
+                    className="mb-2"
+                  />
+                  
+                  {/* Transfer Details */}
+                  <div className="flex justify-between text-xs text-orange-700/80">
+                    <span>{formatFileSize(transfer.file.size)}</span>
+                    {transfer.status === 'transferring' && transfer.speed && (
+                      <span>{formatSpeed(transfer.speed)}</span>
+                    )}
+                    {transfer.status === 'transferring' && transfer.timeRemaining && (
+                      <span>{formatTime(transfer.timeRemaining)}</span>
                     )}
                   </div>
-                </motion.div>
-              ))
-            ) : (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
-                  <svg className="w-8 h-8" style={{ color: '#A6521B', opacity: 0.6 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
                 </div>
-                <p className="text-sm" style={{ color: '#2C1B12', opacity: 0.6 }}>No active transfers</p>
-                <p className="text-xs mt-1" style={{ color: '#A6521B' }}>Select files and a cub to start</p>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </GlassCard>
       </div>
     </div>

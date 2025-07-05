@@ -55,9 +55,9 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
               </div>
               {/* Sender */}
               <div className="mb-2 text-center">
+                <h2 className="text-xl font-bold mb-1" style={{ color: '#2C1B12' }}>{file.fileName}</h2>
                 <span className="text-xs font-bold tracking-widest text-orange-700 drop-shadow-sm">Incoming File</span>
-                <h2 className="text-xl font-bold mt-1 mb-1" style={{ color: '#2C1B12' }}>{file.fileName}</h2>
-                <p className="text-sm text-orange-800 font-medium mb-1">From: {senderName}</p>
+                <p className="text-sm text-orange-800 font-medium mb-1 mt-2">From: {senderName}</p>
                 <p className="text-xs text-orange-700/80">{formatFileSize(file.fileSize)}</p>
               </div>
               {/* Actions */}
