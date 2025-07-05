@@ -1,8 +1,14 @@
 <p align="center">
+  <img src="apps/web/public/banner.png" alt="c0py.me Banner" width="800" height="400" />
+</p>
+
+<p align="center">
   <img src="apps/web/public/favicon.gif" alt="c0py.me Logo" width="96" height="96" />
 </p>
 
-# c0py.me 🦁
+<p align="center">
+  <h1>c0py.me</h1>
+</p>
 
 **Secure Anonymous P2P File Sharing**
 
@@ -13,7 +19,7 @@ A modern, open-source web application for secure peer-to-peer file sharing with 
 [![React](https://img.shields.io/badge/React-18.3.1-blue.svg)](https://reactjs.org/)
 [![WebRTC](https://img.shields.io/badge/WebRTC-Native-green.svg)](https://webrtc.org/)
 
-## ✨ Features
+## Features
 
 - **Secure P2P Transfer**: Files travel directly between devices using WebRTC. No servers store or access your data.
 - **Anonymous Sharing**: Generate random usernames, no accounts required. Share files without revealing your identity.
@@ -22,7 +28,7 @@ A modern, open-source web application for secure peer-to-peer file sharing with 
 - **Connection Authorization**: Recipients see file details and approve transfers. No surprise file downloads.
 - **Real-time Progress**: Watch animated cubs track transfer progress with live speed and time estimates.
 
-## 🦁 How It Works
+## How It Works
 
 1. **Choose Your World**
    - Join the global Jungle, create private Rooms with codes, or connect with Family on the same WiFi network.
@@ -31,7 +37,7 @@ A modern, open-source web application for secure peer-to-peer file sharing with 
 3. **Direct P2P Transfer**
    - Once accepted, files transfer directly between devices via WebRTC. Watch the animated cub track progress in real-time.
 
-## 🏗️ Architecture
+## Architecture
 
 ### Tech Stack
 - **Frontend**: React 18, TypeScript, Framer Motion, Tailwind CSS
@@ -56,7 +62,7 @@ sharedrop/
 └── turbo.json        # Turborepo configuration
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Node.js 18+ 
@@ -100,15 +106,15 @@ sharedrop/
    - Frontend: http://localhost:5173
    - Backend: http://localhost:3001
 
-## 📖 Usage Guide
+## Usage Guide
 
 ### Getting Started
 
 1. **Open c0py.me** in your browser
 2. **Choose your world**:
-   - 🌍 **Jungle**: Connect with anyone globally
-   - 🏠 **Room**: Create/join private rooms
-   - 👨‍👩‍👧‍👦 **Family**: Connect with devices on same WiFi
+   - **Jungle**: Connect with anyone globally
+   - **Room**: Create/join private rooms
+   - **Family**: Connect with devices on same WiFi
 
 3. **Share files**:
    - Drag & drop files or click to select
@@ -130,7 +136,7 @@ sharedrop/
 - **Multiple files** can be transferred simultaneously
 - **No size limits** (browser memory dependent)
 
-## 🔧 Development
+## Development
 
 ### Available Scripts
 
@@ -192,7 +198,7 @@ src/
 - **CubProgress**: Animated progress indicator
 - **Toast**: Notification system with sound
 
-## 🚀 Deployment
+## Deployment
 
 ### Production Deployment
 
@@ -204,112 +210,44 @@ src/
 2. **Set up environment variables**
    ```bash
    # Production environment variables
-   MONGODB_URI=mongodb+srv://...
+   MONGODB_URI=your_mongodb_atlas_uri
    PORT=3001
-   CLIENT_URL=https://yourdomain.com
+   CLIENT_URL=https://your-domain.com
    NODE_ENV=production
    ```
 
-3. **Deploy using Docker**
-   ```bash
-   # Use the provided deployment script
-   ./deploy-sharedrop.sh
-   ```
+3. **Deploy to your preferred platform**
+   - **Vercel**: Frontend deployment
+   - **Railway/Render**: Backend deployment
+   - **MongoDB Atlas**: Database hosting
 
-### Deployment Options
+### Docker Deployment
 
-#### Docker Deployment
 ```bash
 # Build and run with Docker
 docker build -t c0py-me .
 docker run -p 3001:3001 c0py-me
 ```
 
-#### Manual Deployment
-```bash
-# Install PM2 for process management
-npm install -g pm2
+## Security
 
-# Start the application
-pm2 start apps/api/dist/server.js --name c0py-me-api
-pm2 start apps/web/dist --name c0py-me-web
-```
+### Privacy Features
+- **No File Storage**: Files never touch our servers
+- **Anonymous Users**: Random usernames, no accounts
+- **Direct P2P**: End-to-end encrypted transfers
+- **Connection Authorization**: Recipients approve transfers
+- **No Logging**: We don't log file transfers or user data
 
-#### Cloud Platforms
-- **Vercel**: Frontend deployment
-- **Railway**: Full-stack deployment
-- **Heroku**: Backend deployment
-- **DigitalOcean**: VPS deployment
-
-## 🔒 Security
-
-### Data Privacy
-- **No File Storage**: Files never stored on servers
-- **Direct Transfer**: Peer-to-peer communication only
-- **Anonymous Users**: No personal information collected
-- **Encrypted Connections**: WebRTC's built-in encryption
-
-### Network Security
+### Technical Security
+- **WebRTC Encryption**: Built-in encryption for all transfers
 - **HTTPS Only**: Secure connections in production
-- **CORS Configuration**: Proper cross-origin settings
-- **Input Validation**: Sanitized user inputs
-- **Rate Limiting**: API endpoint protection
+- **Input Validation**: All user inputs validated and sanitized
+- **CORS Protection**: Proper cross-origin resource sharing
+- **Rate Limiting**: API rate limiting to prevent abuse
 
-### WebRTC Security
-- **STUN Servers**: Google's public STUN servers
-- **ICE Candidates**: Secure connection establishment
-- **Data Channels**: Encrypted file transfer
-- **Connection Validation**: Peer verification
+## Contributing
 
-## 🧪 Testing
-
-### Running Tests
-```bash
-# Unit tests
-pnpm test
-
-# Integration tests
-pnpm test:integration
-
-# E2E tests
-pnpm test:e2e
-```
-
-### Test Coverage
-- **Frontend**: React Testing Library
-- **Backend**: Jest with supertest
-- **WebRTC**: Manual testing scenarios
-- **UI**: Visual regression testing
-
-## 📊 Performance
-
-### Optimization Features
-- **Code Splitting**: Lazy-loaded components
-- **Bundle Optimization**: Tree shaking and minification
-- **Caching**: Efficient caching strategies
-- **Memory Management**: Optimized file handling
-
-### Performance Metrics
-- **Transfer Speed**: Limited by network bandwidth
-- **Connection Time**: 5-10 seconds for WebRTC setup
-- **Memory Usage**: Efficient chunked file handling
-- **Concurrent Transfers**: Multiple simultaneous transfers
-
-## 🌐 Browser Support
-
-### Supported Browsers
-- **Chrome**: 56+ (Full WebRTC support)
-- **Firefox**: 52+ (Full WebRTC support)
-- **Safari**: 11+ (Limited WebRTC support)
-- **Edge**: 79+ (Full WebRTC support)
-
-### Feature Detection
-- WebRTC API availability
-- Data channel support
-- STUN server connectivity
-- Graceful degradation
-
-## 🤝 Contributing
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ### Development Setup
 1. Fork the repository
@@ -319,42 +257,29 @@ pnpm test:e2e
 5. Submit a pull request
 
 ### Code Style
-- **TypeScript**: Strict mode enabled
-- **ESLint**: Consistent code style
-- **Prettier**: Automatic formatting
-- **Conventional Commits**: Standard commit messages
+- Use TypeScript for all new code
+- Follow ESLint configuration
+- Use Prettier for formatting
+- Write meaningful commit messages
 
-### Testing Guidelines
-- **Unit Tests**: Test individual functions
-- **Integration Tests**: Test component interactions
-- **E2E Tests**: Test complete user workflows
-- **Performance Tests**: Monitor transfer speeds
-
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Support
 
-- **WebRTC Community**: For the amazing peer-to-peer technology
-- **React Team**: For the incredible UI library
-- **Socket.IO**: For real-time communication
-- **Open Source Community**: For inspiration and support
+- **Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical docs
+- **Issues**: Report bugs and feature requests on GitHub
+- **Discussions**: Join community discussions on GitHub
 
-## 📞 Support
+## Acknowledgments
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/sharedrop/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/sharedrop/discussions)
-- **Documentation**: [Wiki](https://github.com/yourusername/sharedrop/wiki)
+- **WebRTC**: For peer-to-peer communication
+- **React**: For the amazing frontend framework
+- **Framer Motion**: For smooth animations
+- **Tailwind CSS**: For utility-first styling
+- **Socket.IO**: For real-time signaling
 
 ---
 
-<p align="center">
-  Made with <span style="color: red;">♥</span> by <a href="https://www.linkedin.com/in/sanathswaroop/" target="_blank">Sanath</a>
-</p>
-
-## 📚 Additional Documentation
-
-For detailed technical information about the system architecture, components, and development guidelines, see:
-
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Comprehensive system architecture documentation
+**Made with love for secure, anonymous file sharing**
