@@ -21,10 +21,13 @@ git pull
 
 log "Installing frontend dependencies..."
 cd "$FRONTEND_DIR"
-pnpm install
+npm install
+
+log "Creating frontend .env file..."
+echo "CLIENT_URL=https://backend.c0py.me" > .env
 
 log "Building frontend..."
-pnpm build
+npm run build
 
 log "Deploying frontend..."
 sudo mkdir -p "$FRONTEND_DEPLOY_DIR"
@@ -33,6 +36,10 @@ sudo cp -r dist/* "$FRONTEND_DEPLOY_DIR/"
 
 log "Restarting backend API server..."
 cd "$BACKEND_DIR"
-pm2 restart sharedrop-api || pm2 restart all
+npm install
+docker ps --filter \"name=sharedrop-redis\" --format \"{{.Names}}\" | grep sharedrop-redis || (docker ps -a --filter \"name=sharedrop-redis\" --format \"{{.Names}}\" | grep sharedrop-redis && docker start sharedrop-redis) || docker run -d --name sharedrop-redis -p 6379:6379 redis:7-alpine redis-server --appendonly yes
+pm2 restart sharedrop-api
+#pm2 start src/server.ts --name "sharedrop-api" -- start
+
 
 log "Deployment complete!"

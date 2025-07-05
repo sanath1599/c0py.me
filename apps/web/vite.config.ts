@@ -23,6 +23,7 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis',
+    'import.meta.env.VITE_CLIENT_URL': JSON.stringify(process.env.CLIENT_URL || 'ws://localhost:3001'),
   },
   resolve: {
     alias: {

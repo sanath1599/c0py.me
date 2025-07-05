@@ -32,8 +32,9 @@ export const useSocket = () => {
   const joinedRoomsRef = useRef<Set<string>>(new Set()); // Track joined rooms per connection
 
   useEffect(() => {
-    // In a real app, this would be your Socket.IO server URL
-    socketRef.current = io('ws://localhost:3001', {
+    // Use CLIENT_URL from env, fallback to ws://localhost:3001
+    const WS_URL = import.meta.env.VITE_CLIENT_URL || 'ws://localhost:3001';
+    socketRef.current = io(WS_URL, {
       transports: ['websocket']
     });
 
