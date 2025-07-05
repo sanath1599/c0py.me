@@ -355,56 +355,59 @@ const filteredPeers = React.useMemo(() => {
 
       {/* Navbar with animated logo */}
       <motion.header
-        className="p-6 border-b"
+        className="p-4 md:p-6 border-b relative"
         style={{ borderColor: 'rgba(166, 82, 27, 0.1)' }}
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
         <div className="max-w-7xl mx-auto flex items-center justify-between">
+          {/* Logo and Brand */}
           <div className="flex items-center gap-3">
             <motion.img
               src="/logo.png"
               alt="c0py.me Lion Logo"
-              className="w-10 h-10"
+              className="w-12 h-12 md:w-16 md:h-16"
               animate={{ rotate: [0, 10, -10, 0] }}
               transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
             />
-            <h1 className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
+            <h1 className="text-2xl md:text-3xl font-bold" style={{ color: '#2C1B12' }}>
               c0py.me
             </h1>
           </div>
-          <div className="flex items-center gap-4">
+
+          {/* Navigation - Desktop and Mobile */}
+          <div className="flex items-center gap-2 md:gap-4">
             {/* World Indicator */}
             {selectedWorld && (
               <motion.button
                 onClick={() => setSelectedWorld(null)}
-                className="flex items-center gap-2 px-3 py-1 rounded-full transition-all hover:scale-105"
+                className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
                 style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
-                <span className="text-lg">
+                <span className="text-sm md:text-lg">
                   {selectedWorld === 'jungle' ? '🌍' : selectedWorld === 'room' ? '🏠' : '👨‍👩‍👧‍👦'}
                 </span>
-                <span className="text-sm font-medium capitalize" style={{ color: '#A6521B' }}>
+                <span className="text-xs md:text-sm font-medium capitalize hidden sm:inline" style={{ color: '#A6521B' }}>
                   {selectedWorld}
                 </span>
                 {currentRoom && selectedWorld !== 'jungle' && (
-                  <span className="text-xs font-mono" style={{ color: '#A6521B', opacity: 0.7 }}>
+                  <span className="text-xs font-mono hidden md:inline" style={{ color: '#A6521B', opacity: 0.7 }}>
                     {currentRoom}
                   </span>
                 )}
-                <span className="text-xs" style={{ color: '#A6521B', opacity: 0.6 }}>
+                <span className="text-xs hidden lg:inline" style={{ color: '#A6521B', opacity: 0.6 }}>
                   (click to switch)
                 </span>
               </motion.button>
             )}
             
             {/* Connection Status */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 md:gap-2">
               <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
-              <span className="text-sm" style={{ color: '#2C1B12', opacity: 0.8 }}>
+              <span className="text-xs md:text-sm hidden sm:inline" style={{ color: '#2C1B12', opacity: 0.8 }}>
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
             </div>
