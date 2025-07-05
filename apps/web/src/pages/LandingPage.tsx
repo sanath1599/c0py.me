@@ -42,7 +42,7 @@
          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
        />
        <motion.div
-         className="absolute w-96 h-96 bg-amber-300/20 rounded-full blur-3xl -bottom-24 -right-32"
+         className="absolute w-96 h-96 bg-orange-400/20 rounded-full blur-3xl -bottom-24 -right-32"
          animate={{ y: [0, -40, 0] }}
          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
        />

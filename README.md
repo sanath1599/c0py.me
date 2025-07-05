@@ -15,28 +15,21 @@ A modern, open-source web application for secure peer-to-peer file sharing with 
 
 ## ✨ Features
 
-### 🔒 **Security & Privacy**
-- **Direct P2P Transfer**: Files never touch servers
-- **Anonymous Sharing**: Random usernames, no accounts required
-- **Secure Transmission**: WebRTC's built-in encryption
-- **Privacy First**: No file storage, no tracking, no logs
+- **Secure P2P Transfer**: Files travel directly between devices using WebRTC. No servers store or access your data.
+- **Anonymous Sharing**: Generate random usernames, no accounts required. Share files without revealing your identity.
+- **Lightning Fast**: Direct device-to-device transfers eliminate server bottlenecks. Experience maximum transfer speeds.
+- **Three Worlds**: Jungle (global), Room (private codes), or Family (same WiFi). Choose your sharing environment.
+- **Connection Authorization**: Recipients see file details and approve transfers. No surprise file downloads.
+- **Real-time Progress**: Watch animated cubs track transfer progress with live speed and time estimates.
 
-### 🌍 **Multiple Worlds**
-- **🌍 Jungle**: Global public space for anyone
-- **🏠 Room**: Private rooms with custom codes
-- **👨‍👩‍👧‍👦 Family**: Local network discovery
+## 🦁 How It Works
 
-### ⚡ **Performance**
-- **Lightning Fast**: Direct device-to-device transfers
-- **Real-time Progress**: Animated cub progress tracking
-- **Chunked Transfers**: Efficient large file handling
-- **No Size Limits**: Limited only by browser memory
-
-### 🎨 **User Experience**
-- **Glassmorphic Design**: Modern, beautiful interface
-- **Responsive Layout**: Works on all devices
-- **Drag & Drop**: Intuitive file selection
-- **Live Notifications**: Toast messages with sound effects
+1. **Choose Your World**
+   - Join the global Jungle, create private Rooms with codes, or connect with Family on the same WiFi network.
+2. **Select & Send Request**
+   - Pick your files, choose a recipient, and send a connection request. The recipient sees your file details and can accept or decline.
+3. **Direct P2P Transfer**
+   - Once accepted, files transfer directly between devices via WebRTC. Watch the animated cub track progress in real-time.
 
 ## 🏗️ Architecture
 
