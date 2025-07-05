@@ -23,6 +23,12 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
   const receivedFilesRef = useRef<Map<string, { name: string; size: number; type: string; chunks: ArrayBuffer[] }>>(new Map());
   const pendingFilesRef = useRef<Map<string, { file: File; peer: any; transferId: string }>>(new Map());
+  const [completedReceived, setCompletedReceived] = useState<Array<{
+    id: string;
+    file: File;
+    url: string;
+    peer: { id: string; name: string; emoji: string; color: string };
+  }>>([]);
 
   const createPeerConnection = useCallback((peerId: string) => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -308,27 +314,24 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
                   const receivedFile = receivedFilesRef.current.get(from);
                   if (receivedFile) {
                     console.log('📥 File received, reconstructing...');
-                    
                     // Reconstruct file
                     const blob = new Blob(receivedFile.chunks, { type: receivedFile.type });
                     const url = URL.createObjectURL(blob);
-                    
-                    // Trigger download
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = receivedFile.name;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    
-                    URL.revokeObjectURL(url);
+                    // Store for transfer complete modal
+                    setCompletedReceived(prev => [
+                      ...prev,
+                      {
+                        id: `completed-${Date.now()}-${Math.random()}`,
+                        file: new File([blob], receivedFile.name, { type: receivedFile.type }),
+                        url,
+                        peer: { id: from, name: 'Unknown', emoji: '📱', color: '#F6C148' }
+                      }
+                    ]);
                     receivedFilesRef.current.delete(from);
-                    
                     // Update transfer status
-                    setTransfers(prev => prev.map(t => 
+                    setTransfers(prev => prev.map(t =>
                       t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
                     ));
-                    
                     // Show success notification
                     if ('Notification' in window && Notification.permission === 'granted') {
                       new Notification('File Received', {
@@ -452,6 +455,7 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
     handleSignal,
     cancelTransfer,
     acceptIncomingFile,
-    rejectIncomingFile
+    rejectIncomingFile,
+    completedReceived,
   };
 };

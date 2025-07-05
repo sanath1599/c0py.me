@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { LionsDen } from '../components/LionsDen';
 import { ProfileModal } from '../components/ProfileModal';
@@ -8,6 +8,7 @@ import { useWebRTC } from '../hooks/useWebRTC';
 import { Peer } from '../types';
 import { getRandomColor, getRandomEmoji } from '../utils/colors';
 import { LionIcon } from '../components/LionIcon';
+import { formatFileSize } from '../utils/format';
 
 export const AppPage: React.FC = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -22,7 +23,11 @@ export const AppPage: React.FC = () => {
   });
 
   const { isConnected, peers, joinDefaultRoom, updateProfile, sendSignal, onSignal } = useSocket();
-  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile } = useWebRTC(sendSignal, currentUser.id);
+  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id);
+
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [activeTransfer, setActiveTransfer] = useState<null | typeof completedReceived[0]>(null);
+  const prevCompletedCount = useRef(0);
 
   // Set up signal handling once
   useEffect(() => {
@@ -39,6 +44,15 @@ export const AppPage: React.FC = () => {
       joinDefaultRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
     }
   }, [isConnected, currentUser, joinDefaultRoom]);
+
+  // Show modal when a new completed transfer is added
+  useEffect(() => {
+    if (completedReceived.length > prevCompletedCount.current) {
+      setActiveTransfer(completedReceived[completedReceived.length - 1]);
+      setShowTransferModal(true);
+    }
+    prevCompletedCount.current = completedReceived.length;
+  }, [completedReceived]);
 
   const handlePeerClick = (peer: Peer) => {
     setSelectedPeer(peer);
@@ -103,7 +117,11 @@ export const AppPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 relative">
+      {/* Modal Overlay */}
+      {(showProfileModal || showTransferModal) && (
+        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[8px] transition-all" style={{ WebkitBackdropFilter: 'blur(8px)' }} />
+      )}
       {/* Navbar with animated logo */}
       <motion.header
         className="p-6 border-b"
@@ -165,6 +183,41 @@ export const AppPage: React.FC = () => {
         currentProfile={currentUser}
         onSave={handleProfileUpdate}
       />
+
+      {/* Transfer Complete Modal */}
+      {showTransferModal && activeTransfer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full relative flex flex-col items-center">
+            <button
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl"
+              onClick={() => setShowTransferModal(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2 className="text-2xl font-bold mb-2" style={{ color: '#2C1B12' }}>File Received!</h2>
+            <p className="mb-4 text-sm text-gray-500">You received a file from <span className="font-semibold">{activeTransfer.peer.name}</span></p>
+            {/* Preview if image/video */}
+            {activeTransfer.file.type.startsWith('image/') && (
+              <img src={activeTransfer.url} alt={activeTransfer.file.name} className="max-w-full max-h-48 rounded mb-4 border" />
+            )}
+            {activeTransfer.file.type.startsWith('video/') && (
+              <video src={activeTransfer.url} controls className="max-w-full max-h-48 rounded mb-4 border" />
+            )}
+            <div className="w-full mb-2">
+              <div className="font-medium text-lg" style={{ color: '#A6521B' }}>{activeTransfer.file.name}</div>
+              <div className="text-xs text-gray-500">{activeTransfer.file.type} • {formatFileSize(activeTransfer.file.size)}</div>
+            </div>
+            <a
+              href={activeTransfer.url}
+              download={activeTransfer.file.name}
+              className="mt-4 w-full py-2 px-4 rounded-lg bg-orange-400 text-white font-semibold text-center hover:bg-orange-500 transition"
+            >
+              Download
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
