@@ -1,18 +1,18 @@
-<p align="center">
-  <img src="apps/web/public/banner.png" alt="c0py.me Banner" width="800" height="400" />
-</p>
+
 
 <p align="center">
-  <img src="apps/web/public/favicon.gif" alt="c0py.me Logo" width="96" height="96" />
+  <img src="apps/web/public/c0py.me-logo.gif" alt="c0py.me Logo" width="96" height="96" />
+   <h1>c0py.me</h1>
 </p>
 
-<p align="center">
-  <h1>c0py.me</h1>
-</p>
 
 **Secure Anonymous P2P File Sharing**
 
 A modern, open-source web application for secure peer-to-peer file sharing with a beautiful glassmorphic UI. Built with the MERN stack, WebRTC, and TypeScript.
+
+<p align="center">
+  <img src="apps/web/public/banner.png" alt="c0py.me Banner" width="800" height="400" />
+</p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.3-blue.svg)](https://www.typescriptlang.org/)
