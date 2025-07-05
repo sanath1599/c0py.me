@@ -28,6 +28,7 @@ export const AppPage: React.FC = () => {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [activeTransfer, setActiveTransfer] = useState<null | typeof completedReceived[0]>(null);
   const prevCompletedCount = useRef(0);
+  const shownTransferToasts = useRef(new Set<string>());
 
   // Set up signal handling once
   useEffect(() => {
@@ -80,10 +81,13 @@ export const AppPage: React.FC = () => {
   // Monitor transfers for completion
   useEffect(() => {
     transfers.forEach(transfer => {
-      if (transfer.status === 'completed') {
-        addToast('success', `File transfer completed!`);
-      } else if (transfer.status === 'failed') {
-        addToast('error', `File transfer failed`);
+      if ((transfer.status === 'completed' || transfer.status === 'failed') && !shownTransferToasts.current.has(transfer.id)) {
+        if (transfer.status === 'completed') {
+          addToast('success', `File transfer completed!`);
+        } else if (transfer.status === 'failed') {
+          addToast('error', `File transfer failed`);
+        }
+        shownTransferToasts.current.add(transfer.id);
       }
     });
   }, [transfers]);

@@ -263,6 +263,8 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
                       body: `${message.fileName} (${formatFileSize(message.fileSize)}) from ${from}`,
                       icon: '/favicon.ico'
                     });
+                  } else {
+                    window.alert(`Incoming file: ${message.fileName} from ${from}`);
                   }
                   
                 } else if (message.type === 'file-start') {
@@ -331,6 +333,8 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
                         body: `Successfully received ${receivedFile.name}`,
                         icon: '/favicon.ico'
                       });
+                    } else {
+                      window.alert(`File received: ${receivedFile.name}`);
                     }
                   }
                 }
@@ -440,6 +444,11 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
     // Remove from incoming files
     setIncomingFiles(prev => prev.filter(f => f.id !== incomingFileId));
   }, [incomingFiles]);
+
+  const playSound = (url: string) => {
+    const audio = new window.Audio(url);
+    audio.play();
+  };
 
   return {
     transfers,
