@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, X, CheckCircle, AlertCircle, Loader } from 'lucide-react';
+import { Send, X, CheckCircle, AlertCircle, Loader, Download } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { Avatar } from './Avatar';
 import { FileTransfer, Peer } from '../types';
@@ -23,21 +23,23 @@ export const FileSharing: React.FC<FileSharingProps> = ({
   onCancelTransfer,
   onClearSelection
 }) => {
-  const [showReceivedToast, setShowReceivedToast] = useState(false);
-  const [receivedFileName, setReceivedFileName] = useState('');
+  const [showToast, setShowToast] = useState<null | { message: string; type: 'success' | 'error' }>();
 
-  // Show toast when a transfer is completed and not sent by this user
+  // Show toast on transfer complete or error
   useEffect(() => {
-    const completedReceived = transfers.find(t => t.status === 'completed' && t.progress === 100 && t.peer && t.peer.name !== 'You');
-    if (completedReceived) {
-      setReceivedFileName(completedReceived.file.name);
-      setShowReceivedToast(true);
-      setTimeout(() => setShowReceivedToast(false), 4000);
+    const completed = transfers.find(t => t.status === 'completed');
+    const failed = transfers.find(t => t.status === 'failed');
+    if (completed) {
+      setShowToast({ message: 'File transfer completed!', type: 'success' });
+      setTimeout(() => setShowToast(null), 3000);
+    } else if (failed) {
+      setShowToast({ message: 'File transfer failed.', type: 'error' });
+      setTimeout(() => setShowToast(null), 3000);
     }
   }, [transfers]);
 
   const handleSend = () => {
-    if (selectedFiles.length > 0 && selectedPeer) {
+    if (selectedPeer && selectedFiles.length > 0) {
       onSendFiles(selectedFiles, selectedPeer);
     }
   };
@@ -75,12 +77,20 @@ export const FileSharing: React.FC<FileSharingProps> = ({
 
   return (
     <GlassCard className="p-6">
-      {/* Toast for received file */}
-      {showReceivedToast && (
-        <div className="fixed top-6 right-6 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50">
-          Received file: {receivedFileName}
-        </div>
-      )}
+      {/* Toast notification */}
+      <AnimatePresence>
+        {showToast && (
+          <motion.div
+            className={`fixed top-6 right-6 px-4 py-2 rounded shadow-lg z-50 text-white ${showToast.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+          >
+            {showToast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold" style={{ color: '#2C1B12' }}>File Sharing</h2>
         {selectedPeer && (
@@ -144,9 +154,9 @@ export const FileSharing: React.FC<FileSharingProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Send button */}
+      {/* Send button - always visible if peer and files selected */}
       <AnimatePresence>
-        {selectedFiles.length > 0 && selectedPeer && (
+        {selectedPeer && selectedFiles.length > 0 && (
           <motion.button
             className="w-full mb-6 p-4 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
             style={{ backgroundColor: '#F6C148' }}
@@ -178,91 +188,47 @@ export const FileSharing: React.FC<FileSharingProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
+            <Loader className="inline-block mr-2 animate-spin" />
             Waiting to receive file...
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Active transfers */}
-      <div className="space-y-3">
-        <AnimatePresence>
-          {transfers.map((transfer) => (
-            <motion.div
-              key={transfer.id}
-              className="p-4 rounded-lg"
-              style={{ backgroundColor: 'rgba(166, 82, 27, 0.05)' }}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              layout
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  {getStatusIcon(transfer.status)}
-                  <span className="font-medium truncate" style={{ color: '#2C1B12' }}>
-                    {transfer.file.name}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Avatar
-                    emoji={transfer.peer.emoji}
-                    color={transfer.peer.color}
-                    size="sm"
-                  />
-                  {transfer.status === 'transferring' && (
-                    <button
-                      onClick={() => onCancelTransfer(transfer.id)}
-                      className="p-1 rounded transition-colors"
-                      style={{ color: '#A6521B', opacity: 0.6 }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)';
-                        e.currentTarget.style.opacity = '1';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                        e.currentTarget.style.opacity = '0.6';
-                      }}
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
+      {/* Active transfers with progress bars */}
+      <div className="space-y-4 mt-4">
+        {transfers.map(transfer => (
+          <div key={transfer.id} className="p-3 rounded-lg border flex items-center gap-4" style={{ borderColor: 'rgba(166, 82, 27, 0.15)' }}>
+            <div className="flex-shrink-0">
+              {transfer.status === 'completed' ? <Download className="text-green-500" /> : <Loader className="animate-spin text-yellow-600" />}
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm" style={{ color: '#2C1B12' }}>{transfer.file.name}</span>
+                <span className="text-xs text-gray-500">{transfer.status}</span>
               </div>
-
-              {/* Progress bar */}
-              <div className="mb-2">
-                <div className="w-full rounded-full h-2" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
-                  <motion.div
-                    className={`h-2 rounded-full ${getStatusColor(transfer.status)}`}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${transfer.progress}%` }}
-                    transition={{ duration: 0.3 }}
-                  />
-                </div>
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                <div
+                  className="bg-yellow-500 h-2.5 rounded-full transition-all duration-300"
+                  style={{ width: `${transfer.progress || 0}%` }}
+                />
               </div>
-
-              {/* Transfer details */}
-              <div className="flex justify-between text-xs" style={{ color: '#2C1B12', opacity: 0.6 }}>
-                <span>{formatFileSize(transfer.file.size)}</span>
-                <div className="flex gap-4">
-                  {transfer.speed && (
-                    <span>{formatSpeed(transfer.speed)}</span>
-                  )}
-                  {transfer.timeRemaining && transfer.status === 'transferring' && (
-                    <span>{formatTime(transfer.timeRemaining)} remaining</span>
-                  )}
-                  <span className="capitalize">{transfer.status}</span>
+              {transfer.status === 'transferring' && (
+                <div className="text-xs text-gray-500 mt-1">
+                  {transfer.speed ? `${transfer.speed} B/s` : ''} {transfer.timeRemaining ? `• ${transfer.timeRemaining}s left` : ''}
                 </div>
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-
-        {transfers.length === 0 && (
-          <div className="text-center py-8 text-white/60">
-            <p style={{ color: '#2C1B12', opacity: 0.6 }}>No active transfers</p>
+              )}
+            </div>
+            {transfer.status === 'transferring' && (
+              <button
+                className="ml-2 p-1 rounded hover:bg-red-100"
+                onClick={() => onCancelTransfer(transfer.id)}
+                title="Cancel transfer"
+              >
+                <X size={16} className="text-red-500" />
+              </button>
+            )}
           </div>
-        )}
+        ))}
       </div>
     </GlassCard>
   );

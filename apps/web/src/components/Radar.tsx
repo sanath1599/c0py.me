@@ -8,6 +8,7 @@ import { Peer } from '../types';
 interface RadarProps {
   peers: Peer[];
   currentUser: { id: string; name: string; emoji: string; color: string };
+  selectedPeer: Peer | null;
   onPeerClick: (peer: Peer) => void;
   onEditProfile: () => void;
   onJoinRoom: () => void;
@@ -16,6 +17,7 @@ interface RadarProps {
 export const Radar: React.FC<RadarProps> = ({
   peers,
   currentUser,
+  selectedPeer,
   onPeerClick,
   onEditProfile,
   onJoinRoom
@@ -29,6 +31,9 @@ export const Radar: React.FC<RadarProps> = ({
     const y = Math.sin(angle) * radius;
     return { x, y };
   };
+
+  // Filter out current user from peers
+  const otherPeers = peers.filter(peer => peer.id !== currentUser.id);
 
   return (
     <GlassCard className="p-6">
@@ -67,6 +72,18 @@ export const Radar: React.FC<RadarProps> = ({
         </div>
       </div>
 
+      {/* Debug info */}
+      <div className="text-xs mb-4 p-2 rounded" style={{ backgroundColor: 'rgba(166, 82, 27, 0.05)' }}>
+        <div style={{ color: '#2C1B12' }}>
+          <div>Total peers: {peers.length}</div>
+          <div>Other peers: {otherPeers.length}</div>
+          <div>Current user: {currentUser.name} ({currentUser.id})</div>
+          {otherPeers.map(peer => (
+            <div key={peer.id}>- {peer.name} ({peer.id})</div>
+          ))}
+        </div>
+      </div>
+
       <div className="relative w-64 h-64 mx-auto">
         {/* Radar circles */}
         <div className="absolute inset-0 rounded-full border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }} />
@@ -89,8 +106,10 @@ export const Radar: React.FC<RadarProps> = ({
 
         {/* Peers around the circle */}
         <AnimatePresence>
-          {peers.filter(peer => peer.id !== currentUser.id).map((peer, index) => {
-            const { x, y } = getRadarPosition(index, peers.filter(p => p.id !== currentUser.id).length);
+          {otherPeers.map((peer, index) => {
+            const { x, y } = getRadarPosition(index, otherPeers.length);
+            const isSelected = selectedPeer?.id === peer.id;
+            
             return (
               <motion.div
                 key={peer.id}
@@ -105,19 +124,35 @@ export const Radar: React.FC<RadarProps> = ({
                 onHoverStart={() => setHoveredPeer(peer.id)}
                 onHoverEnd={() => setHoveredPeer(null)}
               >
-                <Avatar
-                  emoji={peer.emoji}
-                  color={peer.color}
-                  size="md"
-                  onClick={() => onPeerClick(peer)}
-                  isOnline={peer.isOnline}
-                />
+                <div className="relative">
+                  <Avatar
+                    emoji={peer.emoji}
+                    color={peer.color}
+                    size="md"
+                    onClick={() => {
+                      console.log('Peer clicked:', peer);
+                      onPeerClick(peer);
+                    }}
+                    isOnline={peer.isOnline}
+                  />
+                  
+                  {/* Selection indicator */}
+                  {isSelected && (
+                    <motion.div
+                      className="absolute -inset-2 rounded-full border-2"
+                      style={{ borderColor: '#F6C148' }}
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                  )}
+                </div>
                 
                 {/* Peer name tooltip */}
                 <AnimatePresence>
                   {hoveredPeer === peer.id && (
                     <motion.div
-                      className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap"
+                      className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
                       initial={{ opacity: 0, y: -5 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -5 }}
@@ -144,7 +179,7 @@ export const Radar: React.FC<RadarProps> = ({
         </AnimatePresence>
 
         {/* No peers message */}
-        {peers.length === 0 && (
+        {otherPeers.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-sm border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
               <p className="text-sm font-medium" style={{ color: '#2C1B12' }}>No devices nearby</p>

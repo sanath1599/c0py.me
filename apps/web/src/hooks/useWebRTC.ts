@@ -12,6 +12,7 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
   const [connections, setConnections] = useState<Map<string, RTCPeerConnection>>(new Map());
   const [transfers, setTransfers] = useState<FileTransfer[]>([]);
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
+  const receivedFilesRef = useRef<Map<string, { name: string; size: number; type: string; chunks: ArrayBuffer[] }>>(new Map());
 
   const createPeerConnection = useCallback((peerId: string) => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -26,7 +27,18 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
     };
 
     pc.onconnectionstatechange = () => {
-      console.log(`Connection state with ${peerId}:`, pc.connectionState);
+      console.log(`🔗 Connection state with ${peerId}:`, pc.connectionState);
+      
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        // Update transfer status to failed
+        setTransfers(prev => prev.map(t => 
+          t.peer.id === peerId && t.status === 'connecting' ? { ...t, status: 'failed' } : t
+        ));
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log(`🧊 ICE connection state with ${peerId}:`, pc.iceConnectionState);
     };
 
     setConnections(prev => new Map(prev).set(peerId, pc));
@@ -57,7 +69,7 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
       });
 
       dataChannel.onopen = () => {
-        console.log('Data channel opened');
+        console.log('📤 Data channel opened for sending');
         setTransfers(prev => prev.map(t => 
           t.id === transferId ? { ...t, status: 'transferring' } : t
         ));
@@ -67,10 +79,14 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
       };
 
       dataChannel.onerror = (error) => {
-        console.error('Data channel error:', error);
+        console.error('❌ Data channel error:', error);
         setTransfers(prev => prev.map(t => 
           t.id === transferId ? { ...t, status: 'failed' } : t
         ));
+      };
+
+      dataChannel.onclose = () => {
+        console.log('📤 Data channel closed');
       };
 
       dataChannelsRef.current.set(peer.id, dataChannel);
@@ -85,7 +101,7 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
       });
 
     } catch (error) {
-      console.error('Error sending file:', error);
+      console.error('❌ Error sending file:', error);
       setTransfers(prev => prev.map(t => 
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
@@ -112,7 +128,7 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
             type: 'file-start',
             name: file.name,
             size: file.size,
-            type: file.type
+            fileType: file.type
           }));
         }
 
@@ -124,14 +140,14 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
         const progress = (offset / file.size) * 100;
         const elapsed = Date.now() - startTime;
         const speed = offset / (elapsed / 1000); // bytes per second
-        const timeRemaining = (file.size - offset) / speed;
+        const timeRemaining = speed > 0 ? (file.size - offset) / speed : 0;
 
         setTransfers(prev => prev.map(t => 
           t.id === transferId ? { 
             ...t, 
-            progress,
-            speed,
-            timeRemaining
+            progress: Math.round(progress),
+            speed: Math.round(speed),
+            timeRemaining: Math.round(timeRemaining)
           } : t
         ));
 
@@ -143,8 +159,22 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
           setTransfers(prev => prev.map(t => 
             t.id === transferId ? { ...t, status: 'completed', progress: 100 } : t
           ));
+          
+          // Close data channel after a delay
+          setTimeout(() => {
+            if (dataChannel.readyState === 'open') {
+              dataChannel.close();
+            }
+          }, 1000);
         }
       }
+    };
+
+    reader.onerror = () => {
+      console.error('❌ Error reading file chunk');
+      setTransfers(prev => prev.map(t => 
+        t.id === transferId ? { ...t, status: 'failed' } : t
+      ));
     };
 
     readSlice();
@@ -160,38 +190,88 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
         // Set up data channel for receiving
         pc.ondatachannel = (event) => {
           const dataChannel = event.channel;
-          let receivedFile: { name: string; size: number; type: string; chunks: ArrayBuffer[] } | null = null;
+          console.log('📥 Data channel opened for receiving');
           
           dataChannel.onmessage = (event) => {
             if (typeof event.data === 'string') {
-              const message = JSON.parse(event.data);
-              if (message.type === 'file-start') {
-                receivedFile = {
-                  name: message.name,
-                  size: message.size,
-                  type: message.type,
-                  chunks: []
-                };
-              } else if (message.type === 'file-end' && receivedFile) {
-                // Reconstruct file
-                const blob = new Blob(receivedFile.chunks, { type: receivedFile.type });
-                const url = URL.createObjectURL(blob);
-                
-                // Trigger download
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = receivedFile.name;
-                a.click();
-                
-                URL.revokeObjectURL(url);
-                receivedFile = null;
+              try {
+                const message = JSON.parse(event.data);
+                if (message.type === 'file-start') {
+                  console.log('📥 Receiving file:', message.name);
+                  receivedFilesRef.current.set(from, {
+                    name: message.name,
+                    size: message.size,
+                    type: message.fileType,
+                    chunks: []
+                  });
+                  
+                  // Add transfer to list for UI
+                  const transferId = `receive-${Date.now()}-${Math.random()}`;
+                  setTransfers(prev => [...prev, {
+                    id: transferId,
+                    file: new File([], message.name, { type: message.fileType }),
+                    peer: { id: from, name: 'Unknown', emoji: '📱', color: '#F6C148', isOnline: true },
+                    status: 'transferring',
+                    progress: 0
+                  }]);
+                } else if (message.type === 'file-end') {
+                  const receivedFile = receivedFilesRef.current.get(from);
+                  if (receivedFile) {
+                    console.log('📥 File received, reconstructing...');
+                    
+                    // Reconstruct file
+                    const blob = new Blob(receivedFile.chunks, { type: receivedFile.type });
+                    const url = URL.createObjectURL(blob);
+                    
+                    // Trigger download
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = receivedFile.name;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    
+                    URL.revokeObjectURL(url);
+                    receivedFilesRef.current.delete(from);
+                    
+                    // Update transfer status
+                    setTransfers(prev => prev.map(t => 
+                      t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
+                    ));
+                    
+                    // Show success notification
+                    if ('Notification' in window && Notification.permission === 'granted') {
+                      new Notification('File Received', {
+                        body: `Successfully received ${receivedFile.name}`,
+                        icon: '/favicon.ico'
+                      });
+                    }
+                  }
+                }
+              } catch (error) {
+                console.error('❌ Error parsing message:', error);
               }
             } else {
               // Binary data (file chunk)
+              const receivedFile = receivedFilesRef.current.get(from);
               if (receivedFile) {
                 receivedFile.chunks.push(event.data);
+                
+                // Update progress
+                const progress = (receivedFile.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0) / receivedFile.size) * 100;
+                setTransfers(prev => prev.map(t => 
+                  t.peer.id === from && t.status === 'transferring' ? { ...t, progress: Math.round(progress) } : t
+                ));
               }
             }
+          };
+          
+          dataChannel.onerror = (error) => {
+            console.error('❌ Data channel error:', error);
+          };
+          
+          dataChannel.onclose = () => {
+            console.log('📥 Data channel closed');
           };
         };
       }
@@ -219,7 +299,16 @@ export const useWebRTC = (onSignal: (to: string, from: string, data: any) => voi
     setTransfers(prev => prev.map(t => 
       t.id === transferId ? { ...t, status: 'cancelled' } : t
     ));
-  }, []);
+    
+    // Close data channel if it's open
+    const transfer = transfers.find(t => t.id === transferId);
+    if (transfer) {
+      const dataChannel = dataChannelsRef.current.get(transfer.peer.id);
+      if (dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.close();
+      }
+    }
+  }, [transfers]);
 
   return {
     transfers,

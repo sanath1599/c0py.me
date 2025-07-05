@@ -5,6 +5,7 @@ import { UploadCircle } from '../components/UploadCircle';
 import { FileSharing } from '../components/FileSharing';
 import { RoomModal } from '../components/RoomModal';
 import { ProfileModal } from '../components/ProfileModal';
+import { ToastContainer, Toast } from '../components/Toast';
 import { useSocket } from '../hooks/useSocket';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { Peer } from '../types';
@@ -16,16 +17,17 @@ export const AppPage: React.FC = () => {
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const [currentUser, setCurrentUser] = useState({
-    id: `user-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`,
-    name: 'You',
+    id: `user-${crypto.randomUUID()}`,
+    name: 'Anonymous',
     emoji: getRandomEmoji(),
     color: getRandomColor()
   });
   const [roomCode, setRoomCode] = useState<string | null>(null);
 
   const { isConnected, peers, joinRoom, updateProfile, sendSignal, onSignal } = useSocket();
-  const { transfers, sendFile, handleSignal, cancelTransfer } = useWebRTC(sendSignal, currentUser.id);
+  const { transfers, sendFiles, handleSignal, cancelTransfer } = useWebRTC(sendSignal, currentUser.id);
 
   // Set up signal handling once
   useEffect(() => {
@@ -56,20 +58,43 @@ export const AppPage: React.FC = () => {
     setSelectedPeer(peer);
   };
 
-  const handleSendFiles = (files: File[], peer: Peer) => {
-    files.forEach(file => {
-      sendFile(file, peer);
+  const handleSendFiles = async (files: File[], peer: Peer) => {
+    try {
+      await sendFiles(files, peer);
+      addToast('success', `Sending ${files.length} file(s) to ${peer.name}...`);
+    } catch (error) {
+      console.error('Failed to send files:', error);
+      addToast('error', `Failed to send files to ${peer.name}`);
+    }
+  };
+
+  const handleCancelTransfer = (transferId: string) => {
+    cancelTransfer(transferId);
+    addToast('info', 'Transfer cancelled');
+  };
+
+  // Monitor transfers for completion
+  useEffect(() => {
+    transfers.forEach(transfer => {
+      if (transfer.status === 'completed') {
+        addToast('success', `File transfer completed!`);
+      } else if (transfer.status === 'failed') {
+        addToast('error', `File transfer failed`);
+      }
     });
+  }, [transfers]);
+
+  const handleClearSelection = () => {
     setSelectedFiles([]);
+    setSelectedPeer(null);
   };
 
   const handleFileRemove = (index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleClearSelection = () => {
-    setSelectedPeer(null);
-    setSelectedFiles([]);
+  const handleFilesSelected = (files: File[]) => {
+    setSelectedFiles(prev => [...prev, ...files]);
   };
 
   const handleProfileUpdate = (profile: { name: string; emoji: string; color: string }) => {
@@ -77,82 +102,71 @@ export const AppPage: React.FC = () => {
     updateProfile(profile.name, profile.color, profile.emoji);
   };
 
+  // Toast management
+  const addToast = (type: 'success' | 'error' | 'info', message: string) => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    setToasts(prev => [...prev, { id, type, message }]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
+
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#FEF7E0' }}>
-      {/* Header */}
-      <motion.header
-        className="p-6 border-b"
-        style={{ borderColor: 'rgba(166, 82, 27, 0.1)' }}
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-      >
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 p-4">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center"
+        >
+          <div className="flex items-center justify-center gap-3 mb-2">
             <LionIcon className="w-8 h-8" />
-            <h1 className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
+            <h1 className="text-3xl font-bold" style={{ color: '#2C1B12' }}>
               ShareDrop
             </h1>
           </div>
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
-            <span className="text-sm" style={{ color: '#2C1B12', opacity: 0.8 }}>
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
-        </div>
-      </motion.header>
+          <p className="text-sm" style={{ color: '#A6521B' }}>
+            Secure peer-to-peer file sharing
+          </p>
+        </motion.div>
 
-      {/* Main content */}
-      <main className="p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid lg:grid-cols-3 gap-6">
+        {/* Main content */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left column: Radar and File Sharing */}
+          <div className="space-y-6">
             {/* Radar */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-            >
-              <Radar
-                peers={peers}
-                currentUser={currentUser}
-                onPeerClick={handlePeerClick}
-                onEditProfile={() => setShowProfileModal(true)}
-                onJoinRoom={() => setShowRoomModal(true)}
-              />
-            </motion.div>
+            <Radar
+              peers={peers}
+              currentUser={currentUser}
+              selectedPeer={selectedPeer}
+              onPeerClick={handlePeerClick}
+              onEditProfile={() => setShowProfileModal(true)}
+              onJoinRoom={() => setShowRoomModal(true)}
+            />
 
-            {/* Upload Circle */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-            >
-              <UploadCircle
-                selectedFiles={selectedFiles}
-                onFilesSelected={setSelectedFiles}
-                onFileRemove={handleFileRemove}
-              />
-            </motion.div>
+            {/* File Sharing - moved below Radar */}
+            <FileSharing
+              selectedFiles={selectedFiles}
+              selectedPeer={selectedPeer}
+              transfers={transfers}
+              onSendFiles={handleSendFiles}
+              onCancelTransfer={handleCancelTransfer}
+              onClearSelection={handleClearSelection}
+            />
+          </div>
 
-            {/* File Sharing */}
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.3 }}
-            >
-              <FileSharing
-                selectedFiles={selectedFiles}
-                selectedPeer={selectedPeer}
-                transfers={transfers}
-                onSendFiles={handleSendFiles}
-                onCancelTransfer={cancelTransfer}
-                onClearSelection={handleClearSelection}
-              />
-            </motion.div>
+          {/* Right column: Upload Circle */}
+          <div className="flex items-start justify-center">
+            <UploadCircle
+              onFilesSelected={handleFilesSelected}
+              selectedFiles={selectedFiles}
+              onFileRemove={handleFileRemove}
+            />
           </div>
         </div>
-      </main>
+      </div>
 
       {/* Modals */}
       <RoomModal
