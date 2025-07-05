@@ -1,37 +1,21 @@
 {
-  "name": "sharedrop-monorepo",
+  "name": "@sharedrop/api",
   "version": "1.0.0",
-  "description": "ShareDrop - WebRTC File Sharing Monorepo with MERN Stack",
-  "private": true,
+  "description": "ShareDrop WebRTC signaling server",
+  "main": "dist/server.js",
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "test": "turbo run test",
-    "type-check": "turbo run type-check",
-    "clean": "turbo run clean",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "db:generate": "turbo run db:generate",
-    "db:push": "turbo run db:push",
-    "db:studio": "turbo run db:studio",
-    "setup": "node setup.js",
-    "test:connection": "node test-connection.js"
+    "dev:redis": "docker ps --filter \"name=sharedrop-redis\" --format \"{{.Names}}\" | grep sharedrop-redis || (docker ps -a --filter \"name=sharedrop-redis\" --format \"{{.Names}}\" | grep sharedrop-redis && docker start sharedrop-redis) || docker run -d --name sharedrop-redis -p 6379:6379 redis:7-alpine redis-server --appendonly yes",
+    "dev": "pnpm run dev:redis && turbo run dev --parallel",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write src/**/*.ts"
   },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.0.0",
-    "eslint-config-prettier": "^9.0.0",
-    "eslint-plugin-react": "^7.0.0",
-    "eslint-plugin-react-hooks": "^4.0.0",
-    "prettier": "^3.0.0",
-    "turbo": "^2.5.4",
-    "typescript": "^5.0.0"
-  },
-  "engines": {
-    "node": ">=18.0.0",
-    "pnpm": ">=8.0.0"
-  },
+  "keywords": ["webrtc", "file-sharing", "socket.io", "signaling"],
+  "author": "",
+  "license": "ISC",
   "packageManager": "pnpm@10.12.4"
 } 

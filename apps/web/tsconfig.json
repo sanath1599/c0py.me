@@ -1,14 +1,7 @@
 {
-  "extends": "@sharedrop/typescript-config/react.json",
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"],
-      "@sharedrop/ui": ["../../packages/ui"],
-      "@sharedrop/database": ["../../packages/database"],
-      "@sharedrop/config": ["../../packages/config"]
-    }
-  },
-  "include": ["src"],
-  "exclude": ["node_modules", "build"]
-} 
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}

@@ -1,7 +1,7 @@
-import dotenv from 'dotenv';
+import { config } from 'dotenv';
 
 // Load environment variables
-dotenv.config();
+config();
 
 export interface EnvironmentConfig {
   NODE_ENV: string;

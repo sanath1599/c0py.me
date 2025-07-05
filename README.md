@@ -441,7 +441,347 @@ pnpm --filter @sharedrop/api build
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## �� Acknowledgments
+## 📄 Acknowledgments
 
 - Built with modern web technologies for optimal performance
-- Uses Google's STUN servers for NAT traversal 
+- Uses Google's STUN servers for NAT traversal
+
+# ShareDrop Backend
+
+A robust WebRTC signaling server for peer-to-peer file sharing built with Node.js, TypeScript, Express, Socket.IO, and MongoDB.
+
+## 🚀 Features
+
+- **WebRTC Signaling**: Complete signaling server for peer-to-peer connections
+- **Real-time Communication**: Socket.IO for instant messaging and peer discovery
+- **User Management**: Track users, rooms, and connection states
+- **Comprehensive Logging**: Winston with file rotation and structured logging
+- **Input Validation**: Zod schemas for all incoming data
+- **Error Handling**: Centralized error handling with proper HTTP status codes
+- **TypeScript**: Full type safety and modern development experience
+- **Docker Support**: Production-ready containerization
+- **Testing**: Jest setup for unit and integration tests
+
+## 📋 Prerequisites
+
+- Node.js 18+
+- pnpm 8+
+- MongoDB (local or cloud)
+
+## 🛠️ Installation
+
+1. **Clone and navigate to the backend:**
+   ```bash
+   cd apps/api
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   pnpm install
+   ```
+
+3. **Set up environment variables:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
+
+4. **Start MongoDB** (if using local):
+   ```bash
+   # Using Docker
+   docker run -d -p 27017:27017 --name mongodb mongo:latest
+   
+   # Or using MongoDB locally
+   mongod
+   ```
+
+## 🚀 Development
+
+```bash
+# Start development server
+pnpm dev
+
+# Build for production
+pnpm build
+
+# Start production server
+pnpm start
+
+# Run tests
+pnpm test
+
+# Run tests in watch mode
+pnpm test:watch
+
+# Lint code
+pnpm lint
+
+# Format code
+pnpm format
+```
+
+## 📡 API Endpoints
+
+### Health Check
+```http
+GET /api/health
+```
+Returns server status.
+
+### User Management
+```http
+GET /api/users/room?room=roomName
+POST /api/users
+PUT /api/users/:userId
+PATCH /api/users/:userId/offline
+GET /api/users/stats
+```
+
+## 🔌 Socket.IO Events
+
+### Client to Server
+
+#### `join-room`
+Join a room and get peer list.
+```javascript
+socket.emit('join-room', {
+  room: 'my-room',
+  userId: 'user123',
+  name: 'John Doe',
+  color: '#F6C148',
+  emoji: '🦁'
+});
+```
+
+#### `signal`
+Send WebRTC signaling data.
+```javascript
+socket.emit('signal', {
+  to: 'targetUserId',
+  data: {
+    type: 'offer',
+    sdp: '...'
+  }
+});
+```
+
+#### `update-profile`
+Update user profile.
+```javascript
+socket.emit('update-profile', {
+  name: 'New Name',
+  color: '#FF0000',
+  emoji: '🐯'
+});
+```
+
+#### `get-peers`
+Get list of peers in room.
+```javascript
+socket.emit('get-peers', { room: 'my-room' });
+```
+
+### Server to Client
+
+#### `peers`
+List of peers in the room.
+```javascript
+socket.on('peers', (peers) => {
+  // peers: [{ userId, name, color, emoji }]
+});
+```
+
+#### `peer-joined`
+New peer joined the room.
+```javascript
+socket.on('peer-joined', (peer) => {
+  // peer: { id, name, color, emoji }
+});
+```
+
+#### `peer-left`
+Peer left the room.
+```javascript
+socket.on('peer-left', (userId) => {
+  // userId: string
+});
+```
+
+#### `signal`
+WebRTC signaling data from another peer.
+```javascript
+socket.on('signal', ({ from, data }) => {
+  // from: userId, data: { type, sdp, candidate }
+});
+```
+
+#### `profile-updated`
+Peer updated their profile.
+```javascript
+socket.on('profile-updated', ({ userId, name, color, emoji }) => {
+  // Updated profile data
+});
+```
+
+#### `error`
+Error message from server.
+```javascript
+socket.on('error', ({ message }) => {
+  // Handle error
+});
+```
+
+## 🗄️ Database Schema
+
+### User Model
+```typescript
+interface IUser {
+  userId: string;           // Unique user identifier
+  socketId: string;         // Current socket connection
+  room: string;             // Current room
+  name: string;             // Display name
+  color: string;            // User color
+  emoji: string;            // User emoji
+  isOnline: boolean;        // Online status
+  lastSeen: Date;           // Last activity
+  connectionCount: number;  // Total connections
+  createdAt: Date;          // Account creation
+  updatedAt: Date;          // Last update
+}
+```
+
+## 🐳 Docker Deployment
+
+### Build and Run
+```bash
+# Build image
+docker build -t sharedrop-backend .
+
+# Run container
+docker run -d \
+  --name sharedrop-backend \
+  -p 5000:5000 \
+  -e MONGODB_URI=mongodb://host.docker.internal:27017/sharedrop \
+  -e CLIENT_URL=http://localhost:3000 \
+  sharedrop-backend
+```
+
+### Docker Compose
+```yaml
+version: '3.8'
+services:
+  backend:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/sharedrop
+      - CLIENT_URL=http://localhost:3000
+    depends_on:
+      - mongo
+    volumes:
+      - ./logs:/app/logs
+
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:
+```
+
+## 📊 Logging
+
+The server uses Winston for comprehensive logging:
+
+- **Console**: Colored output with timestamps
+- **File**: Daily rotation with compression
+- **Error Logs**: Separate error log files
+- **Levels**: error, warn, info, debug, success
+
+Log files are stored in `logs/` directory:
+- `application-YYYY-MM-DD.log` - All logs
+- `error-YYYY-MM-DD.log` - Error logs only
+- `exceptions-YYYY-MM-DD.log` - Unhandled exceptions
+- `rejections-YYYY-MM-DD.log` - Unhandled rejections
+
+## 🔧 Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `5000` | Server port |
+| `NODE_ENV` | `development` | Environment |
+| `MONGODB_URI` | `mongodb://localhost:27017/sharedrop` | MongoDB connection |
+| `CLIENT_URL` | `http://localhost:3000` | Frontend URL |
+| `LOG_LEVEL` | `debug` | Logging level |
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+pnpm test
+
+# Run tests with coverage
+pnpm test -- --coverage
+
+# Run tests in watch mode
+pnpm test:watch
+```
+
+## 📁 Project Structure
+
+```
+src/
+├── controllers/     # Request handlers
+├── models/         # Database models
+├── routes/         # Express routes
+├── services/       # Business logic
+├── utils/          # Utilities and helpers
+├── app.ts          # Express app setup
+└── server.ts       # Server entry point
+
+tests/              # Test files
+logs/               # Log files
+dist/               # Compiled output
+```
+
+## 🔒 Security Features
+
+- **Input Validation**: All inputs validated with Zod
+- **CORS**: Configurable cross-origin requests
+- **Error Handling**: No sensitive data in error responses
+- **Rate Limiting**: Ready for implementation
+- **No File Storage**: All file transfers are P2P
+
+## 🚀 Production Deployment
+
+1. **Build the application:**
+   ```bash
+   pnpm build
+   ```
+
+2. **Set production environment variables:**
+   ```bash
+   NODE_ENV=production
+   MONGODB_URI=your-production-mongodb-uri
+   CLIENT_URL=your-frontend-url
+   ```
+
+3. **Start the server:**
+   ```bash
+   pnpm start
+   ```
+
+## 🤝 Contributing
+
+1. Follow TypeScript best practices
+2. Add tests for new features
+3. Update documentation
+4. Use conventional commits
+
+## 📄 License
+
+MIT License - see LICENSE file for details. 
