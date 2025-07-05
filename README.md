@@ -351,4 +351,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <p align="center">
   Made with <span style="color: red;">♥</span> by <a href="https://www.linkedin.com/in/sanathswaroop/" target="_blank">Sanath</a>
-</p> 
+</p>
+
+## 📚 Additional Documentation
+
+For detailed technical information about the system architecture, components, and development guidelines, see:
+
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Comprehensive system architecture documentation
