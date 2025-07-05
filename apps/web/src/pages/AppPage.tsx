@@ -11,6 +11,13 @@ import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
 
+const WORLD_OPTIONS = [
+  { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open space, send to anyone' },
+  { key: 'room', label: 'Room', icon: '🏠', desc: 'Private group room' },
+  { key: 'family', label: 'Family', icon: '👨‍👩‍👧‍👦', desc: 'Same WiFi group' },
+] as const;
+type WorldType = typeof WORLD_OPTIONS[number]['key'];
+
 export const AppPage: React.FC = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
@@ -30,6 +37,8 @@ export const AppPage: React.FC = () => {
   const [activeTransfer, setActiveTransfer] = useState<null | typeof completedReceived[0]>(null);
   const prevCompletedCount = useRef(0);
   const shownTransferToasts = useRef(new Set<string>());
+
+  const [selectedWorld, setSelectedWorld] = useState<WorldType | null>(null);
 
   // Set up signal handling once
   useEffect(() => {
@@ -164,8 +173,49 @@ export const AppPage: React.FC = () => {
     );
   };
 
+  const WorldSwitcher: React.FC<{ value: WorldType | null; onChange: (w: WorldType) => void }> = ({ value, onChange }) => (
+  <div className="flex flex-col items-center justify-center min-h-[60vh]">
+    <div className="absolute inset-0 -z-10 bg-gradient-to-br from-orange-100/80 via-amber-100/60 to-white/80" />
+    <img
+      src="/favicon.gif"
+      alt="ShareDrop Lion Logo"
+      className="w-20 h-20 mb-4 drop-shadow-xl animate-bounce-slow"
+      style={{ filter: 'drop-shadow(0 4px 24px #A6521B44)' }}
+    />
+    <h2 className="text-3xl font-bold mb-8 tracking-tight" style={{ color: '#A6521B', textShadow: '0 2px 16px #fff8' }}>Welcome to ShareDrop</h2>
+    <div className="flex flex-wrap gap-8 mb-4 justify-center">
+      {WORLD_OPTIONS.map(opt => (
+        <button
+          key={opt.key}
+          className={`relative group flex flex-col items-center px-10 py-8 rounded-3xl shadow-xl border-2 transition-all text-lg font-semibold focus:outline-none backdrop-blur-[16px] bg-white/30 border-white/40 hover:bg-white/50 hover:scale-105 active:scale-100 ${value === opt.key ? 'border-orange-400 ring-4 ring-orange-200/60 scale-105' : ''}`}
+          style={{ boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.10)' }}
+          onClick={() => onChange(opt.key)}
+        >
+          <span className="text-5xl mb-3 drop-shadow-lg transition-transform group-hover:scale-110 group-active:scale-95">
+            {opt.icon}
+          </span>
+          <span className="text-xl font-bold mb-1 tracking-tight" style={{ color: value === opt.key ? '#A6521B' : '#2C1B12' }}>{opt.label}</span>
+          <span className="block text-xs font-normal mt-1 text-gray-500 text-center max-w-[10rem]">{opt.desc}</span>
+          {value === opt.key && (
+            <span className="absolute -top-3 right-4 bg-orange-400 text-white text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">Selected</span>
+          )}
+          {/* Shine effect */}
+          <span className="pointer-events-none absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" style={{ background: 'linear-gradient(120deg,rgba(255,255,255,0.25) 0%,rgba(255,255,255,0.05) 100%)' }} />
+        </button>
+      ))}
+    </div>
+    <p className="text-sm text-gray-400 mt-4 backdrop-blur">Select a world to get started</p>
+  </div>
+);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 relative">
+      {/* World Switcher Overlay */}
+      {!selectedWorld && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[8px]">
+          <WorldSwitcher value={selectedWorld} onChange={setSelectedWorld} />
+        </div>
+      )}
       {/* Modal Overlay */}
       {(showProfileModal || showTransferModal) && (
         <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[8px] transition-all" style={{ WebkitBackdropFilter: 'blur(8px)' }} />
@@ -201,28 +251,30 @@ export const AppPage: React.FC = () => {
       </motion.header>
 
       {/* Main content */}
-      <main className="p-6">
-        <div className="max-w-7xl mx-auto">
-          {/* Lions Den - New Layout */}
-          <LionsDen
-            peers={peers}
-            currentUser={currentUser}
-            selectedPeer={selectedPeer}
-            selectedFiles={selectedFiles}
-            transfers={transfers}
-            incomingFiles={incomingFiles}
-            onPeerClick={handlePeerClick}
-            onSendFiles={handleSendFiles}
-            onCancelTransfer={handleCancelTransfer}
-            onClearSelection={handleClearSelection}
-            onFilesSelected={handleFilesSelected}
-            onFileRemove={handleFileRemove}
-            onEditProfile={() => setShowProfileModal(true)}
-            onAcceptIncomingFile={acceptIncomingFile}
-            onRejectIncomingFile={rejectIncomingFile}
-          />
-        </div>
-      </main>
+      {selectedWorld && (
+        <main className="p-6">
+          <div className="max-w-7xl mx-auto">
+            {/* Lions Den - New Layout */}
+            <LionsDen
+              peers={peers}
+              currentUser={currentUser}
+              selectedPeer={selectedPeer}
+              selectedFiles={selectedFiles}
+              transfers={transfers}
+              incomingFiles={incomingFiles}
+              onPeerClick={handlePeerClick}
+              onSendFiles={handleSendFiles}
+              onCancelTransfer={handleCancelTransfer}
+              onClearSelection={handleClearSelection}
+              onFilesSelected={handleFilesSelected}
+              onFileRemove={handleFileRemove}
+              onEditProfile={() => setShowProfileModal(true)}
+              onAcceptIncomingFile={acceptIncomingFile}
+              onRejectIncomingFile={rejectIncomingFile}
+            />
+          </div>
+        </main>
+      )}
 
       {/* Modals */}
       <ProfileModal
