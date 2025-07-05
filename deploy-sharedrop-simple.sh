@@ -24,7 +24,11 @@ cd "$FRONTEND_DIR"
 npm install
 
 log "Creating frontend .env file..."
-echo "CLIENT_URL=https://backend.c0py.me" > .env
+cat <<EOF > .env
+VITE_CLIENT_URL=https://backend.c0py.me
+VITE_API_URL=https://backend.c0py.me
+VITE_WS_URL=wss://backend.c0py.me
+EOF
 
 log "Building frontend..."
 npm run build

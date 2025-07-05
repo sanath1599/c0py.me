@@ -39,8 +39,8 @@ export const useSocket = () => {
   }, []);
 
   useEffect(() => {
-    // Use CLIENT_URL from env, fallback to ws://localhost:3001
-    const WS_URL = import.meta.env.VITE_CLIENT_URL || 'ws://localhost:3001';
+    // Use VITE_WS_URL from env, fallback to VITE_CLIENT_URL, then ws://localhost:3001
+    const WS_URL = import.meta.env.VITE_WS_URL || import.meta.env.VITE_CLIENT_URL || 'ws://localhost:3001';
     socketRef.current = io(WS_URL, {
       transports: ['websocket']
     });
