@@ -148,8 +148,8 @@ export const RoomModal: React.FC<RoomModalProps> = ({
               <div className="flex flex-col items-center mb-6">
                 <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-2xl border-4 border-white/40 bg-white/20 backdrop-blur-md">
                   <motion.img
-                    src="/favicon.gif"
-                    alt="ShareDrop Lion Logo"
+                    src="/logo.png"
+                    alt="c0py.me Lion Logo"
                     className="w-16 h-16 rounded-full"
                     style={{ filter: 'drop-shadow(0 4px 24px #A6521B66)' }}
                     initial={{ scale: 0.8, opacity: 0 }}

@@ -336,14 +336,14 @@ const filteredPeers = React.useMemo(() => {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <motion.img
-              src="/favicon.gif"
-              alt="ShareDrop Lion Logo"
+              src="/logo.png"
+              alt="c0py.me Lion Logo"
               className="w-10 h-10"
               animate={{ rotate: [0, 10, -10, 0] }}
               transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
             />
             <h1 className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
-              ShareDrop
+              c0py.me
             </h1>
           </div>
           <div className="flex items-center gap-4">

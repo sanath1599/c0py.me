@@ -1,4 +1,4 @@
-// RSA key management utilities for E2EE
+// RSA key management utilities for secure file transmission
 
 const KEY_STORAGE_KEY = 'sharedrop_rsa_keypair';
 
