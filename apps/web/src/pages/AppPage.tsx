@@ -13,7 +13,7 @@ import { generateRandomUsername } from '../utils/names';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
-import { Globe, Home, Users } from 'lucide-react';
+import { Globe, Home, Users, Play } from 'lucide-react';
 import { 
   trackWorldSelection, 
   trackRoomEvents, 
@@ -23,6 +23,7 @@ import {
   trackPrivacyEvents 
 } from '../utils/analytics';
 import { AnalyticsDebug } from '../components/AnalyticsDebug';
+import { DemoModal } from '../components/DemoModal';
 
 const WORLD_OPTIONS = [
   { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open space, send to anyone' },
@@ -75,6 +76,7 @@ export const AppPage: React.FC = () => {
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showFamilyNotice, setShowFamilyNotice] = useState(false);
   const [pendingWorld, setPendingWorld] = useState<WorldType | null>(null);
+  const [showDemo, setShowDemo] = useState(false);
 
   // Join default jungle room when connection is established
   useEffect(() => {
@@ -378,6 +380,20 @@ const filteredPeers = React.useMemo(() => {
 
           {/* Navigation - Desktop and Mobile */}
           <div className="flex items-center gap-2 md:gap-4">
+            {/* Demo Button */}
+            <button
+              onClick={() => setShowDemo(true)}
+              className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
+              style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
+            >
+              <Play size={16} className="text-orange-700" />
+              <span className="text-xs md:text-sm font-medium hidden sm:inline" style={{ color: '#A6521B' }}>
+                Demo
+              </span>
+            </button>
+
             {/* World Indicator */}
             {selectedWorld && (
               <motion.button
@@ -520,6 +536,9 @@ const filteredPeers = React.useMemo(() => {
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
       <AnalyticsDebug />
+      
+      {/* Demo Modal */}
+      <DemoModal isOpen={showDemo} onClose={() => setShowDemo(false)} />
     </div>
   );
 };
