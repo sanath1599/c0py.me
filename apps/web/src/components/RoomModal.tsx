@@ -1,46 +1,128 @@
-import React, { useState } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ChangeEvent,
+  type FormEvent,
+} from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Users, Lock, Globe } from 'lucide-react';
+import { X, Globe, Lock, RefreshCw, Copy } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 
-interface RoomModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onJoinRoom: (roomId: string) => void;
+/* ------------------------------------------------------------------ */
+/* helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+const ROOM_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' as const;
+const DEFAULT_LENGTH = 8;
+
+function generateRandomRoomId(length: number = DEFAULT_LENGTH): string {
+  return Array.from({ length }, () =>
+    ROOM_ID_CHARS[Math.floor(Math.random() * ROOM_ID_CHARS.length)]
+  ).join('');
 }
 
-export const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onClose, onJoinRoom }) => {
+export function isValidRoomId(id: string): boolean {
+  return /^[A-Z0-9]{5,10}$/.test(id);
+}
+
+/* ------------------------------------------------------------------ */
+/* types                                                              */
+/* ------------------------------------------------------------------ */
+
+export interface RoomModalProps {
+  isOpen: boolean;
+  onClose(): void;
+  onJoinRoom(roomId: string): void;
+}
+
+/* ------------------------------------------------------------------ */
+/* component                                                          */
+/* ------------------------------------------------------------------ */
+
+export const RoomModal: React.FC<RoomModalProps> = ({
+  isOpen,
+  onClose,
+  onJoinRoom,
+}) => {
+  const [tab, setTab] = useState<'create' | 'join'>('join');
   const [roomId, setRoomId] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (roomId.trim().length >= 5 && roomId.trim().length <= 10) {
-      onJoinRoom(roomId.trim());
-      onClose();
-    }
-  };
+  // refs for autofocus
+  const createInputRef = useRef<HTMLInputElement>(null);
+  const joinInputRef = useRef<HTMLInputElement>(null);
 
-  const generateRoomId = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 8; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    setRoomId(result);
-    setIsCreating(true);
-  };
+  /* ---------------------------------- */
+  /* reset state when tab or modal flips */
+  /* ---------------------------------- */
+  useEffect(() => {
+    if (!isOpen) return;
 
-  const handleCreateNew = () => {
-    setIsCreating(true);
-    generateRoomId();
-  };
-
-  const handleJoinExisting = () => {
-    setIsCreating(false);
+    // WHEN OPENING THE MODAL:
+    // create → start empty, join → start empty as well
     setRoomId('');
+    setTouched(false);
+    setCopied(false);
+
+    // give the correct field focus after the next paint
+    setTimeout(() => {
+      (tab === 'create' ? createInputRef : joinInputRef).current?.focus();
+    }, 0);
+  }, [isOpen, tab]);
+
+  /* ---------------------------------- */
+  /* handlers                           */
+  /* ---------------------------------- */
+
+  const handleRandom = useCallback(() => {
+    setRoomId(generateRandomRoomId());
+    setTouched(true);
+    setCopied(false);
+  }, []);
+
+  const handleCopy = useCallback(() => {
+    if (!roomId) return;
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(roomId).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      });
+    }
+  }, [roomId]);
+
+  const handleInput = (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    setRoomId(value);
+    setTouched(true);
   };
 
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = roomId.trim();
+
+    if (!isValidRoomId(trimmed)) {
+      setTouched(true);
+      return;
+    }
+
+    setSubmitting(true);
+    await new Promise((res) => setTimeout(res, 700)); // fake latency
+    setSubmitting(false);
+
+    onJoinRoom(trimmed);
+    onClose();
+  };
+
+  const showError = touched && !isValidRoomId(roomId);
+
+  /* ------------------------------------------------------------------ */
+  /* render                                                              */
+  /* ------------------------------------------------------------------ */
   return (
     <AnimatePresence>
       {isOpen && (
@@ -50,31 +132,21 @@ export const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onClose, onJoinRoo
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          {/* Dimmed, blurred background */}
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-[12px]" style={{ zIndex: 0 }} />
+          {/* overlay */}
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-md z-0" />
 
-          {/* Modal Card */}
+          {/* card */}
           <motion.div
             className="w-full max-w-md mx-4 z-10"
             initial={{ scale: 0.96, opacity: 0, y: 32 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: 32 }}
-            transition={{ type: "spring", damping: 22, stiffness: 260 }}
+            transition={{ type: 'spring', damping: 22, stiffness: 260 }}
           >
-            <div
-              className="relative p-0 pt-12 pb-8 px-7 overflow-visible"
-              style={{
-                borderRadius: 32,
-                background: 'linear-gradient(135deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.18) 100%)',
-                boxShadow: '0 8px 48px 0 rgba(31, 38, 135, 0.18), 0 1.5px 8px 0 #A6521B22',
-                border: '1.5px solid rgba(255,255,255,0.32)',
-                backdropFilter: 'blur(18px)',
-                WebkitBackdropFilter: 'blur(18px)',
-              }}
-            >
-              {/* Lion GIF with glassy glow */}
-              <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center">
-                <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-2xl border-4 border-white/40 bg-white/20 backdrop-blur-[10px] relative">
+            <GlassCard className="pt-10 pb-8 px-6 min-h-[540px] relative overflow-visible flex flex-col items-center">
+              {/* Lion logo and branding */}
+              <div className="flex flex-col items-center mb-6">
+                <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-2xl border-4 border-white/40 bg-white/20 backdrop-blur-md">
                   <motion.img
                     src="/favicon.gif"
                     alt="ShareDrop Lion Logo"
@@ -84,140 +156,295 @@ export const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onClose, onJoinRoo
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ duration: 0.5 }}
                   />
-                  {/* Glassy ring */}
-                  <div className="absolute inset-0 rounded-full border-2 border-white/30" style={{ boxShadow: '0 0 32px 8px #F6C14833, 0 0 0 8px rgba(255,255,255,0.08) inset' }} />
                 </div>
-                <span className="mt-2 text-xs font-bold tracking-widest text-orange-700 drop-shadow-sm" style={{ letterSpacing: '0.15em' }}>c0py.me</span>
+                <span className="mt-2 text-xs font-bold tracking-widest text-orange-700 drop-shadow-sm">
+                  c0py.me
+                </span>
               </div>
 
               {/* Close button */}
               <button
+                type="button"
                 onClick={onClose}
                 aria-label="Close room modal"
-                className="absolute top-5 right-5 p-2 rounded-full hover:bg-white/30 focus:bg-white/40 transition-colors focus:outline-none border border-white/30 shadow"
-                style={{ color: '#A6521B', backdropFilter: 'blur(8px)' }}
+                className="absolute top-5 right-5 p-2 rounded-full hover:bg-white/30 focus:bg-white/40 transition-colors focus:outline-none border border-white/30 shadow focus:ring-2 focus:ring-orange-400"
               >
                 <X size={22} />
               </button>
 
-              {/* Header */}
-              <div className="text-center mb-8 mt-4">
-                <div className="flex items-center justify-center gap-3 mb-3">
-                  <motion.div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg border border-white/30 bg-white/30 backdrop-blur-[10px]"
-                    whileHover={{ scale: 1.08 }}
-                    whileTap={{ scale: 0.96 }}
-                  >
-                    <Users size={28} style={{ color: '#A6521B' }} />
-                  </motion.div>
-                </div>
-                <h2 className="text-3xl font-extrabold mb-1 tracking-tight text-orange-900 drop-shadow-lg" style={{ letterSpacing: '-0.01em' }}>
-                  Join Room
-                </h2>
-                <p className="text-base font-medium text-orange-700/90" style={{ textShadow: '0 1px 8px #fff8' }}>
-                  Enter a room code to join an existing pride
-                </p>
-              </div>
-
-              {/* Toggle buttons */}
-              <div className="flex gap-2 mb-8">
-                <motion.button
-                  type="button"
-                  onClick={handleCreateNew}
-                  aria-label="Create new room"
-                  className={`flex-1 py-3 px-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all border-2 focus:outline-none focus:ring-2 focus:ring-orange-300 shadow-lg ${
-                    isCreating 
-                      ? 'bg-white/60 border-orange-400 text-orange-700 shadow-orange-200' 
-                      : 'bg-white/30 border-white/40 text-gray-600 hover:bg-white/50'
-                  }`}
-                  style={{ backdropFilter: 'blur(10px)' }}
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.98 }}
+              {/* Tabs */}
+              <div className="flex gap-2 mb-8 w-full max-w-xs mx-auto justify-center">
+                <TabButton
+                  active={tab === 'create'}
+                  onClick={() => setTab('create')}
+                  icon={<Globe size={18} />}
                 >
-                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/40 backdrop-blur-[6px] mr-2 shadow border border-white/30">
-                    <Globe size={18} style={{ color: '#A6521B' }} />
-                  </span>
                   Create New
-                </motion.button>
-                <motion.button
-                  type="button"
-                  onClick={handleJoinExisting}
-                  aria-label="Join existing room"
-                  className={`flex-1 py-3 px-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all border-2 focus:outline-none focus:ring-2 focus:ring-orange-300 shadow-lg ${
-                    !isCreating 
-                      ? 'bg-white/60 border-orange-400 text-orange-700 shadow-orange-200' 
-                      : 'bg-white/30 border-white/40 text-gray-600 hover:bg-white/50'
-                  }`}
-                  style={{ backdropFilter: 'blur(10px)' }}
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.98 }}
+                </TabButton>
+                <TabButton
+                  active={tab === 'join'}
+                  onClick={() => setTab('join')}
+                  icon={<Lock size={18} />}
                 >
-                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/40 backdrop-blur-[6px] mr-2 shadow border border-white/30">
-                    <Lock size={18} style={{ color: '#A6521B' }} />
-                  </span>
                   Join Existing
-                </motion.button>
+                </TabButton>
               </div>
 
               {/* Form */}
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-orange-900/90" style={{ letterSpacing: '0.04em' }}>
-                    Room Code
-                  </label>
-                  <input
-                    type="text"
-                    value={roomId}
-                    onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                    placeholder={isCreating ? "Room code will be generated" : "Enter room code (5-10 characters)"}
-                    className="w-full px-4 py-3 rounded-xl border border-orange-200 bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-lg font-mono text-center tracking-widest"
-                    style={{ color: '#2C1B12', letterSpacing: '0.15em', fontWeight: 600, background: 'rgba(255,255,255,0.7)', boxShadow: '0 2px 12px #F6C14822' }}
-                    maxLength={10}
-                    minLength={5}
-                    disabled={isCreating}
-                    aria-label="Room code input"
-                    autoFocus
+              <form onSubmit={handleSubmit} className="w-full max-w-sm mx-auto flex flex-col gap-6">
+                {tab === 'create' ? (
+                  <CreateSection
+                    roomId={roomId}
+                    handleInput={handleInput}
+                    inputRef={createInputRef}
+                    handleRandom={handleRandom}
+                    handleCopy={handleCopy}
+                    copied={copied}
+                    showError={showError}
                   />
-                  {isCreating && (
-                    <p className="text-xs mt-2 text-center font-medium text-orange-700/90">
-                      Share this code with others to invite them to your room
-                    </p>
-                  )}
-                </div>
+                ) : (
+                  <JoinSection
+                    roomId={roomId}
+                    handleInput={handleInput}
+                    handleRandom={handleRandom}
+                    showError={showError}
+                    inputRef={joinInputRef}
+                  />
+                )}
 
-                <motion.button
-                  type="submit"
-                  className="w-full py-3 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-300"
-                  style={{ background: 'linear-gradient(90deg, #F6C148 60%, #A6521B 100%)', boxShadow: '0 4px 24px #F6C14833' }}
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.98 }}
-                  disabled={roomId.trim().length < 5 || roomId.trim().length > 10}
-                  aria-label="Join room button"
+                <SubmitButton
+                  disabled={submitting || !isValidRoomId(roomId)}
+                  submitting={submitting}
+                  icon={tab === 'create' ? <Globe size={18} /> : <Lock size={18} />}
                 >
-                  {isCreating ? (
-                    <>
-                      <Globe size={18} />
-                      Create Room
-                    </>
-                  ) : (
-                    <>
-                      <Lock size={18} />
-                      Join Room
-                    </>
-                  )}
-                </motion.button>
+                  {tab === 'create' ? 'Create Room' : 'Join Room'}
+                </SubmitButton>
               </form>
 
-              {/* Info */}
-              <div className="mt-6 p-3 rounded-lg border border-orange-100/60 bg-white/40 backdrop-blur-[6px] shadow-sm">
+              {/* Privacy info */}
+              <div className="mt-8 p-3 rounded-lg border border-orange-100/60 bg-white/40 backdrop-blur-[6px] shadow-sm w-full max-w-sm mx-auto">
                 <p className="text-xs text-center font-medium text-orange-700/90">
                   <strong>Room Privacy:</strong> Only users with the room code can join. Files are shared directly between room members.
                 </p>
               </div>
-            </div>
+            </GlassCard>
           </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
   );
 };
+
+/* ================================================================== */
+/* tiny sub-components                                                 */
+/* ================================================================== */
+
+interface TabButtonProps {
+  active: boolean;
+  onClick(): void;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}
+
+const TabButton: React.FC<TabButtonProps> = ({
+  active,
+  onClick,
+  icon,
+  children,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`flex-1 py-3 px-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all border-2 focus:outline-none focus:ring-2 focus:ring-orange-300 shadow-lg ${
+      active
+        ? 'bg-white/60 border-orange-400 text-orange-700 shadow-orange-200'
+        : 'bg-white/30 border-white/40 text-gray-600 hover:bg-white/50'
+    }`}
+  >
+    {icon}
+    {children}
+  </button>
+);
+
+interface CreateSectionProps {
+  roomId: string;
+  handleInput(e: ChangeEvent<HTMLInputElement>): void;
+  inputRef: React.RefObject<HTMLInputElement>;
+  handleRandom(): void;
+  handleCopy(): void;
+  copied: boolean;
+  showError: boolean;
+}
+
+const CreateSection: React.FC<CreateSectionProps> = ({
+  roomId,
+  handleInput,
+  inputRef,
+  handleRandom,
+  handleCopy,
+  copied,
+  showError,
+}) => (
+  <div className="flex flex-col gap-4 items-center w-full">
+    <label className="block text-sm font-semibold mb-1 text-orange-900/90 self-start">
+      Room Code
+    </label>
+    <input
+      ref={inputRef}
+      type="text"
+      value={roomId}
+      onChange={handleInput}
+      placeholder="Enter room code (5–10 characters)"
+      className={`w-full px-4 py-3 rounded-xl border bg-white/60 shadow focus:outline-none focus:ring-2 text-lg font-mono text-center tracking-widest ${
+        showError
+          ? 'border-red-400 ring-2 ring-red-200'
+          : 'border-orange-200 focus:ring-orange-300'
+      }`}
+      maxLength={10}
+      minLength={5}
+    />
+    <button
+      type="button"
+      onClick={handleRandom}
+      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/60 border border-orange-200 shadow hover:bg-orange-100/80 active:bg-orange-200/80 transition-all backdrop-blur-[6px] focus:outline-none focus:ring-2 focus:ring-orange-400 text-orange-800 font-semibold text-base"
+      style={{ marginTop: 4 }}
+    >
+      <RefreshCw size={20} className="mr-1" />
+      Generate Random Room Code
+    </button>
+    <button
+      type="button"
+      onClick={handleCopy}
+      className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/60 border border-orange-200 shadow hover:bg-green-100/80 active:bg-green-200/80 transition-all backdrop-blur-[6px] focus:outline-none focus:ring-2 focus:ring-green-400 text-green-800 font-semibold text-base ${copied ? 'ring-2 ring-green-400' : ''}`}
+      style={{ marginTop: 4 }}
+      disabled={!roomId}
+    >
+      <Copy size={18} className={copied ? 'text-green-600' : undefined} />
+      {copied ? 'Copied!' : 'Copy Room Code'}
+    </button>
+    {showError && (
+      <p className="text-xs mt-2 text-center font-medium text-red-600">
+        Room code must be 5-10 letters or numbers (A-Z, 0-9)
+      </p>
+    )}
+  </div>
+);
+
+interface JoinSectionProps {
+  roomId: string;
+  handleInput(e: ChangeEvent<HTMLInputElement>): void;
+  handleRandom(): void;
+  showError: boolean;
+  inputRef: React.RefObject<HTMLInputElement>;
+}
+
+const JoinSection: React.FC<JoinSectionProps> = ({
+  roomId,
+  handleInput,
+  handleRandom,
+  showError,
+  inputRef,
+}) => (
+  <div className="flex flex-col gap-4 items-center w-full">
+    <label className="block text-sm font-semibold mb-1 text-orange-900/90 self-start">
+      Room Code
+    </label>
+    <input
+      ref={inputRef}
+      type="text"
+      value={roomId}
+      onChange={handleInput}
+      placeholder="Enter room code (5–10 characters)"
+      className={`w-full px-4 py-3 rounded-xl border bg-white/60 shadow focus:outline-none focus:ring-2 text-lg font-mono text-center tracking-widest ${
+        showError
+          ? 'border-red-400 ring-2 ring-red-200'
+          : 'border-orange-200 focus:ring-orange-300'
+      }`}
+      maxLength={10}
+      minLength={5}
+      autoFocus
+    />
+    <button
+      type="button"
+      onClick={handleRandom}
+      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/60 border border-orange-200 shadow hover:bg-orange-100/80 active:bg-orange-200/80 transition-all backdrop-blur-[6px] focus:outline-none focus:ring-2 focus:ring-orange-400 text-orange-800 font-semibold text-base"
+      style={{ marginTop: 4 }}
+    >
+      <RefreshCw size={20} className="mr-1" />
+      Generate Random Room Code
+    </button>
+    {showError && (
+      <p className="text-xs mt-2 text-center font-medium text-red-600">
+        Room code must be 5-10 letters or numbers (A-Z, 0-9)
+      </p>
+    )}
+  </div>
+);
+
+interface IconButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  ring?: string;
+}
+
+const IconButton: React.FC<IconButtonProps> = ({
+  ring,
+  className = '',
+  ...rest
+}) => (
+  <button
+    type="button"
+    className={`w-9 h-9 flex items-center justify-center rounded-full bg-white/60 border border-white/40 shadow hover:bg-orange-100/80 active:bg-orange-200/80 transition-all backdrop-blur-[6px] focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-40 disabled:cursor-not-allowed ${ring ?? ''} ${className}`}
+    {...rest}
+  />
+);
+
+interface SubmitButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  submitting: boolean;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}
+
+const SubmitButton: React.FC<SubmitButtonProps> = ({
+  submitting,
+  icon,
+  children,
+  ...rest
+}) => (
+  <button
+    type="submit"
+    className="w-full py-3 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-300 text-lg disabled:opacity-60 disabled:cursor-not-allowed"
+    style={{
+      background: 'linear-gradient(90deg, #F6C148 60%, #A6521B 100%)',
+    }}
+    {...rest}
+  >
+    {submitting ? (
+      <svg
+        className="animate-spin h-6 w-6 text-white"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          className="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="4"
+        />
+        <path
+          className="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8v8z"
+        />
+      </svg>
+    ) : (
+      <>
+        {icon}
+        {children}
+      </>
+    )}
+  </button>
+);

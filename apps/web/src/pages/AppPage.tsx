@@ -12,6 +12,7 @@ import { getRandomColor, getRandomEmoji } from '../utils/colors';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
+import { Globe, Home, Users } from 'lucide-react';
 
 const WORLD_OPTIONS = [
   { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open space, send to anyone' },
@@ -212,6 +213,7 @@ export const AppPage: React.FC = () => {
   const handleFamilyDecline = () => {
     setPendingWorld(null);
     setShowFamilyNotice(false);
+    setShowRoomModal(true);
   };
 
   const WorldSwitcher: React.FC<{ value: WorldType | null; onChange: (w: WorldType) => void }> = ({ value, onChange }) => (
@@ -232,11 +234,13 @@ export const AppPage: React.FC = () => {
           style={{ boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.10)' }}
           onClick={() => onChange(opt.key)}
         >
-          <span className="text-5xl mb-3 drop-shadow-lg transition-transform group-hover:scale-110 group-active:scale-95">
-            {opt.icon}
+          <span className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/30 backdrop-blur-[10px] shadow-lg border border-white/30 mb-3">
+            {opt.key === 'jungle' && <Globe size={36} style={{ color: '#A6521B' }} />}
+            {opt.key === 'room' && <Home size={36} style={{ color: '#A6521B' }} />}
+            {opt.key === 'family' && <Users size={36} style={{ color: '#A6521B' }} />}
           </span>
           <span className="text-xl font-bold mb-1 tracking-tight" style={{ color: value === opt.key ? '#A6521B' : '#2C1B12' }}>{opt.label}</span>
-          <span className="block text-xs font-normal mt-1 text-gray-500 text-center max-w-[10rem]">{opt.desc}</span>
+         
           {value === opt.key && (
             <span className="absolute -top-3 right-4 bg-orange-400 text-white text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">Selected</span>
           )}
@@ -245,7 +249,20 @@ export const AppPage: React.FC = () => {
         </button>
       ))}
     </div>
-    <p className="text-sm text-gray-400 mt-4 backdrop-blur">Select a world to get started</p>
+    <div className="flex flex-col items-center gap-3 mt-4">
+      <span className="px-5 py-2 rounded-full bg-white/60 backdrop-blur-[8px] shadow border border-orange-100/60 text-base font-semibold text-orange-900/90" style={{ letterSpacing: '0.01em' }}>
+        Select a world to get started
+      </span>
+      <a
+        href="https://www.linkedin.com/in/sanathswaroop/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-1 px-4 py-1.5 rounded-full bg-white/40 backdrop-blur-[6px] shadow border border-orange-100/60 text-xs font-medium text-orange-700/90 flex items-center gap-1 hover:bg-orange-100/60 transition"
+        style={{ textDecoration: 'none' }}
+      >
+        Made with <span className="text-red-500 text-base">♥</span> by Sanath
+      </a>
+    </div>
   </div>
 );
 
@@ -266,11 +283,19 @@ const filteredPeers = React.useMemo(() => {
   return otherPeers;
 }, [peers, currentUser.id, searchQuery, selectedWorld, currentRoom]);
 
+  // Modal open state
+  const isAnyModalOpen = !selectedWorld || showRoomModal || showFamilyNotice || showProfileModal || showTransferModal;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 relative">
+      {/* Global Modal Overlay */}
+      {isAnyModalOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[12px] transition-all" style={{ WebkitBackdropFilter: 'blur(12px)' }} />
+      )}
+
       {/* World Switcher Overlay */}
       {!selectedWorld && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[8px]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
           <WorldSwitcher value={selectedWorld} onChange={handleWorldSelect} />
         </div>
       )}
@@ -294,14 +319,11 @@ const filteredPeers = React.useMemo(() => {
         {showFamilyNotice && (
           <FamilyPrivacyNotice
             onAccept={handleFamilyAccept}
-            onDecline={handleFamilyDecline}
+            onCreateRoom={handleFamilyDecline}
           />
         )}
       </AnimatePresence>
-      {/* Modal Overlay */}
-      {(showProfileModal || showTransferModal) && (
-        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[8px] transition-all" style={{ WebkitBackdropFilter: 'blur(8px)' }} />
-      )}
+
       {/* Navbar with animated logo */}
       <motion.header
         className="p-6 border-b"

@@ -1,14 +1,14 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { AlertTriangle, Shield, Users } from 'lucide-react';
+import { AlertTriangle, Shield, Users, Home, Globe } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 
 interface FamilyPrivacyNoticeProps {
   onAccept: () => void;
-  onDecline: () => void;
+  onCreateRoom: () => void;
 }
 
-export const FamilyPrivacyNotice: React.FC<FamilyPrivacyNoticeProps> = ({ onAccept, onDecline }) => {
+export const FamilyPrivacyNotice: React.FC<FamilyPrivacyNoticeProps> = ({ onAccept, onCreateRoom }) => {
   return (
     <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[8px]"
@@ -75,17 +75,15 @@ export const FamilyPrivacyNotice: React.FC<FamilyPrivacyNoticeProps> = ({ onAcce
           {/* Action buttons */}
           <div className="flex gap-3">
             <motion.button
-              onClick={onDecline}
-              className="flex-1 py-3 px-4 rounded-xl font-medium transition-colors border-2"
-              style={{ 
-                borderColor: 'rgba(166, 82, 27, 0.3)',
-                color: '#A6521B',
-                backgroundColor: 'rgba(166, 82, 27, 0.05)'
-              }}
-              whileHover={{ scale: 1.02 }}
+              onClick={onCreateRoom}
+              className="flex-1 py-3 px-4 rounded-xl font-medium transition-colors border-2 bg-white/40 border-orange-200 shadow hover:bg-orange-100/80 focus:bg-orange-200/80 focus:outline-none flex items-center justify-center gap-2"
+              whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.98 }}
             >
-              Stay in Jungle
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/30 backdrop-blur-[6px] mr-2 shadow border border-white/30">
+                <Home size={18} style={{ color: '#A6521B' }} />
+              </span>
+              Join Private Room
             </motion.button>
             <motion.button
               onClick={onAccept}
