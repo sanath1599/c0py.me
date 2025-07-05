@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, X, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import { GlassCard } from './GlassCard';
@@ -23,6 +23,19 @@ export const FileSharing: React.FC<FileSharingProps> = ({
   onCancelTransfer,
   onClearSelection
 }) => {
+  const [showReceivedToast, setShowReceivedToast] = useState(false);
+  const [receivedFileName, setReceivedFileName] = useState('');
+
+  // Show toast when a transfer is completed and not sent by this user
+  useEffect(() => {
+    const completedReceived = transfers.find(t => t.status === 'completed' && t.progress === 100 && t.peer && t.peer.name !== 'You');
+    if (completedReceived) {
+      setReceivedFileName(completedReceived.file.name);
+      setShowReceivedToast(true);
+      setTimeout(() => setShowReceivedToast(false), 4000);
+    }
+  }, [transfers]);
+
   const handleSend = () => {
     if (selectedFiles.length > 0 && selectedPeer) {
       onSendFiles(selectedFiles, selectedPeer);
@@ -62,6 +75,12 @@ export const FileSharing: React.FC<FileSharingProps> = ({
 
   return (
     <GlassCard className="p-6">
+      {/* Toast for received file */}
+      {showReceivedToast && (
+        <div className="fixed top-6 right-6 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50">
+          Received file: {receivedFileName}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold" style={{ color: '#2C1B12' }}>File Sharing</h2>
         {selectedPeer && (
@@ -105,6 +124,12 @@ export const FileSharing: React.FC<FileSharingProps> = ({
                 <p className="text-sm" style={{ color: '#2C1B12', opacity: 0.6 }}>{selectedPeer.name}</p>
               </div>
             </div>
+            {/* Ready to send state */}
+            {selectedFiles.length === 0 && (
+              <div className="text-center mt-4 text-yellow-700">
+                Select files to send
+              </div>
+            )}
           </motion.div>
         ) : (
           <motion.div
@@ -141,6 +166,20 @@ export const FileSharing: React.FC<FileSharingProps> = ({
             <Send size={18} />
             Send {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}
           </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Waiting to receive state */}
+      <AnimatePresence>
+        {!selectedPeer && transfers.some(t => t.status === 'pending' || t.status === 'connecting' || t.status === 'transferring') && (
+          <motion.div
+            className="mb-6 text-center py-4 text-blue-700"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            Waiting to receive file...
+          </motion.div>
         )}
       </AnimatePresence>
 

@@ -7,7 +7,7 @@ import { Peer } from '../types';
 
 interface RadarProps {
   peers: Peer[];
-  currentUser: { name: string; emoji: string; color: string };
+  currentUser: { id: string; name: string; emoji: string; color: string };
   onPeerClick: (peer: Peer) => void;
   onEditProfile: () => void;
   onJoinRoom: () => void;
@@ -89,8 +89,8 @@ export const Radar: React.FC<RadarProps> = ({
 
         {/* Peers around the circle */}
         <AnimatePresence>
-          {peers.map((peer, index) => {
-            const { x, y } = getRadarPosition(index, peers.length);
+          {peers.filter(peer => peer.id !== currentUser.id).map((peer, index) => {
+            const { x, y } = getRadarPosition(index, peers.filter(p => p.id !== currentUser.id).length);
             return (
               <motion.div
                 key={peer.id}
