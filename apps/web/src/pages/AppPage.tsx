@@ -9,6 +9,7 @@ import { Peer } from '../types';
 import { getRandomColor, getRandomEmoji } from '../utils/colors';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
+import JSZip from 'jszip';
 
 export const AppPage: React.FC = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -120,6 +121,49 @@ export const AppPage: React.FC = () => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
+  const ZipPreview: React.FC<{ file: File }> = ({ file }) => {
+    const [tree, setTree] = useState<Array<{ name: string; dir: boolean; size?: number }>>([]);
+    useEffect(() => {
+      const loadZip = async () => {
+        const zip = await JSZip.loadAsync(file);
+        const files: Array<{ name: string; dir: boolean; size?: number }> = [];
+        zip.forEach((relativePath, zipEntry) => {
+          // JSZip typings do not expose _data, so we cast to any
+          const size = (zipEntry as any)._data?.uncompressedSize;
+          files.push({
+            name: zipEntry.name,
+            dir: zipEntry.dir,
+            size,
+          });
+        });
+        setTree(files);
+      };
+      loadZip();
+    }, [file]);
+    return (
+      <div className="w-full max-h-48 overflow-auto bg-gray-50 rounded p-2 mb-4 border text-xs">
+        <div className="font-semibold mb-1">ZIP Contents:</div>
+        <ul>
+          {tree.map((entry, i) => (
+            <li key={i} className={entry.dir ? 'font-bold' : ''}>
+              {entry.dir ? '📁' : '📄'} {entry.name} {entry.size ? `(${formatFileSize(entry.size)})` : ''}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
+  const TextPreview: React.FC<{ file: File }> = ({ file }) => {
+    const [text, setText] = useState('');
+    useEffect(() => {
+      file.text().then(t => setText(t.slice(0, 2000)));
+    }, [file]);
+    return (
+      <pre className="w-full max-h-48 overflow-auto bg-gray-50 rounded p-2 mb-4 border text-xs whitespace-pre-wrap">{text}</pre>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 relative">
       {/* Modal Overlay */}
@@ -207,6 +251,15 @@ export const AppPage: React.FC = () => {
             )}
             {activeTransfer.file.type.startsWith('video/') && (
               <video src={activeTransfer.url} controls className="max-w-full max-h-48 rounded mb-4 border" />
+            )}
+            {activeTransfer.file.type === 'application/pdf' && (
+              <iframe src={activeTransfer.url} title={activeTransfer.file.name} className="w-full h-64 rounded mb-4 border" />
+            )}
+            {activeTransfer.file.type === 'application/zip' && (
+              <ZipPreview file={activeTransfer.file} />
+            )}
+            {activeTransfer.file.type.startsWith('text/') && (
+              <TextPreview file={activeTransfer.file} />
             )}
             <div className="w-full mb-2">
               <div className="font-medium text-lg" style={{ color: '#A6521B' }}>{activeTransfer.file.name}</div>
