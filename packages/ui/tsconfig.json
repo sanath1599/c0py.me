@@ -1,0 +1,10 @@
+{
+  "extends": "@sharedrop/typescript-config/react.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+} 

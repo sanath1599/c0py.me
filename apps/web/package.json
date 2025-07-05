@@ -1,0 +1,42 @@
+{
+  "name": "@sharedrop/web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "lint": "eslint src --ext .ts,.tsx,.js,.jsx",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf build node_modules"
+  },
+  "dependencies": {
+    "@sharedrop/database": "workspace:*",
+    "@sharedrop/ui": "workspace:*",
+    "@types/uuid": "^9.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.6.3",
+    "react-scripts": "5.0.1",
+    "socket.io-client": "^4.8.1",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

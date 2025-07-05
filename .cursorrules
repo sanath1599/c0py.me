@@ -1,0 +1,423 @@
+# ShareDrop - MERN Stack WebRTC File Sharing Cursor Rules
+
+## Project Overview
+This is a monorepo built with Turborepo and pnpm for a WebRTC file sharing application using the MERN stack (MongoDB, Express.js, React, Node.js) with TypeScript, modern UI components, and real-time communication.
+
+## Architecture & Structure
+
+### Monorepo Structure
+```
+sharedrop/
+├── apps/
+│   ├── web/          # React frontend application
+│   └── api/          # Express.js backend API
+├── packages/
+│   ├── ui/           # Shared UI components
+│   ├── database/     # Database models and utilities
+│   └── config/       # Shared configuration
+├── tools/
+│   ├── eslint-config/    # Shared ESLint configuration
+│   └── typescript-config/ # Shared TypeScript configuration
+└── turbo.json        # Turborepo configuration
+```
+
+### Technology Stack
+- **Frontend**: React 18, TypeScript, Socket.IO Client, WebRTC API
+- **Backend**: Node.js, Express.js, Socket.IO, MongoDB, Mongoose
+- **Build Tools**: Turborepo, pnpm, TypeScript
+- **UI**: Custom components with glassmorphism design
+- **Real-time**: WebRTC peer-to-peer file transfer with WebSocket signaling
+
+## Development Guidelines
+
+### Package Management (pnpm)
+- Use `pnpm` for all package management operations
+- Workspace dependencies use `workspace:*` syntax
+- Install packages in specific workspaces: `pnpm add <package> --filter @sharedrop/web`
+- Run scripts across workspaces: `pnpm --filter @sharedrop/web dev`
+
+### Turborepo Best Practices
+- Use `turbo run <task>` to run tasks across all workspaces
+- Define pipeline tasks in `turbo.json`
+- Use `dependsOn` for task dependencies
+- Cache outputs appropriately for build tasks
+- Use `persistent: true` for dev servers
+
+### TypeScript Configuration
+- Use strict TypeScript settings
+- Extend shared configs from `@sharedrop/typescript-config`
+- React apps use `react.json` config
+- Node.js apps use `node.json` config
+- Enable strict null checks and no implicit any
+
+### ESLint Configuration
+- Extend shared configs from `@sharedrop/eslint-config`
+- React components use `react.js` config
+- TypeScript files use `typescript.js` config
+- Enforce consistent code style across workspaces
+
+## Frontend Development (React + TypeScript)
+
+### Component Structure
+```typescript
+// Use functional components with hooks
+import React, { useState, useEffect } from 'react';
+
+interface ComponentProps {
+  // Define clear prop interfaces
+  title: string;
+  onAction?: () => void;
+}
+
+export const Component: React.FC<ComponentProps> = ({ title, onAction }) => {
+  // Use descriptive state names
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Use useEffect for side effects
+  useEffect(() => {
+    // Cleanup functions for subscriptions
+    return () => {
+      // Cleanup logic
+    };
+  }, []);
+  
+  return (
+    <div className="component">
+      <h2>{title}</h2>
+      {/* Use semantic HTML */}
+    </div>
+  );
+};
+```
+
+### State Management
+- Use React hooks for local state
+- Use Context API for shared state across components
+- Keep state as close to where it's used as possible
+- Use useReducer for complex state logic
+
+### Styling Guidelines
+- Use CSS modules or styled-components for component-specific styles
+- Implement glassmorphism design with backdrop blur effects
+- Use CSS custom properties for theming
+- Ensure responsive design for mobile and desktop
+- Use modern CSS features like Grid and Flexbox
+
+### WebRTC Integration
+```typescript
+// WebRTC peer connection setup
+const createPeerConnection = () => {
+  const peerConnection = new RTCPeerConnection({
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+  });
+  
+  // Handle data channels for file transfer
+  peerConnection.ondatachannel = (event) => {
+    const dataChannel = event.channel;
+    setupDataChannel(dataChannel);
+  };
+  
+  return peerConnection;
+};
+
+// File transfer with chunking
+const sendFile = async (file: File, dataChannel: RTCDataChannel) => {
+  const chunkSize = 16384; // 16KB chunks
+  const reader = new FileReader();
+  let offset = 0;
+  
+  const readNextChunk = () => {
+    const slice = file.slice(offset, offset + chunkSize);
+    reader.readAsArrayBuffer(slice);
+  };
+  
+  reader.onload = (e) => {
+    const chunk = e.target?.result;
+    if (chunk) {
+      dataChannel.send(JSON.stringify({
+        type: 'file-chunk',
+        chunk: chunk
+      }));
+      offset += chunk.byteLength;
+      
+      if (offset < file.size) {
+        readNextChunk();
+      }
+    }
+  };
+  
+  readNextChunk();
+};
+```
+
+## Backend Development (Node.js + Express + MongoDB)
+
+### API Structure
+```typescript
+// Express.js server setup
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { dbConnection } from '@sharedrop/database';
+import { getEnvironmentConfig } from '@sharedrop/config';
+
+const app = express();
+const server = createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    methods: ["GET", "POST"]
+  }
+});
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Database connection
+await dbConnection.connect({
+  uri: getEnvironmentConfig().MONGODB_URI
+});
+
+// Socket.IO event handling
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
+  
+  socket.on('join', (userId) => {
+    // Handle user joining
+  });
+  
+  socket.on('disconnect', () => {
+    // Handle user disconnection
+  });
+});
+```
+
+### Database Models
+```typescript
+// Use Mongoose with TypeScript
+import mongoose, { Document, Schema } from 'mongoose';
+
+export interface IUser extends Document {
+  userId: string;
+  socketId: string;
+  username: string;
+  isOnline: boolean;
+  lastSeen: Date;
+  connectionCount: number;
+  createdAt: Date;
+}
+
+const userSchema = new Schema<IUser>({
+  userId: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  socketId: {
+    type: String,
+    required: true,
+  },
+  // ... other fields
+});
+
+export const User = mongoose.model<IUser>('User', userSchema);
+```
+
+### Error Handling
+```typescript
+// Global error handler
+app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('Error:', error);
+  
+  if (error.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Validation Error',
+      details: error.message
+    });
+  }
+  
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+  });
+});
+
+// Async error wrapper
+const asyncHandler = (fn: Function) => (req: Request, res: Response, next: NextFunction) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+```
+
+## Shared Packages
+
+### UI Package (@sharedrop/ui)
+- Reusable React components
+- TypeScript interfaces for props
+- Consistent styling and theming
+- Export components through index.ts
+
+### Database Package (@sharedrop/database)
+- Mongoose models with TypeScript
+- Database connection utilities
+- Validation helpers
+- Type-safe database operations
+
+### Config Package (@sharedrop/config)
+- Environment configuration
+- Constants and validation
+- Shared configuration utilities
+- Type-safe config access
+
+## WebRTC Implementation
+
+### Signaling Server
+- WebSocket-based signaling for WebRTC connection establishment
+- Handle offer/answer exchange
+- ICE candidate exchange
+- File transfer request/response
+
+### Peer-to-Peer File Transfer
+- Direct file transfer between browsers
+- Chunked file transfer for large files
+- Progress tracking and status updates
+- Error handling and retry mechanisms
+
+### Security Considerations
+- WebRTC connections are encrypted by default
+- No file content stored on server
+- User session management
+- Input validation and sanitization
+
+## Testing Guidelines
+
+### Unit Tests
+- Test individual components and functions
+- Use Jest and React Testing Library
+- Mock external dependencies
+- Test error scenarios
+
+### Integration Tests
+- Test API endpoints
+- Test WebSocket communication
+- Test database operations
+- Test WebRTC connections
+
+### E2E Tests
+- Test complete user workflows
+- Test file transfer functionality
+- Test cross-browser compatibility
+- Test mobile responsiveness
+
+## Performance Optimization
+
+### Frontend
+- Use React.memo for expensive components
+- Implement lazy loading for routes
+- Optimize bundle size with code splitting
+- Use Web Workers for heavy computations
+
+### Backend
+- Implement connection pooling for MongoDB
+- Use Redis for caching (if needed)
+- Optimize database queries
+- Implement rate limiting
+
+### WebRTC
+- Optimize chunk size for file transfers
+- Implement connection pooling
+- Use appropriate STUN/TURN servers
+- Monitor connection quality
+
+## Deployment
+
+### Environment Configuration
+- Use environment variables for configuration
+- Separate configs for development, staging, production
+- Use .env files for local development
+- Validate environment variables on startup
+
+### Build Process
+- Use Turborepo for efficient builds
+- Implement proper caching strategies
+- Optimize bundle sizes
+- Use production builds for deployment
+
+### Monitoring
+- Implement health check endpoints
+- Monitor WebRTC connection success rates
+- Track file transfer performance
+- Log errors and performance metrics
+
+## Code Quality
+
+### Code Style
+- Use Prettier for consistent formatting
+- Follow ESLint rules strictly
+- Use meaningful variable and function names
+- Write self-documenting code
+
+### Documentation
+- Document complex functions and components
+- Use JSDoc for TypeScript interfaces
+- Maintain up-to-date README files
+- Document API endpoints
+
+### Git Workflow
+- Use conventional commits
+- Create feature branches for new development
+- Write descriptive commit messages
+- Review code before merging
+
+## Security Best Practices
+
+### Authentication & Authorization
+- Implement proper user authentication
+- Use JWT tokens for session management
+- Validate user permissions
+- Secure API endpoints
+
+### Data Validation
+- Validate all user inputs
+- Sanitize data before database operations
+- Use TypeScript for type safety
+- Implement proper error handling
+
+### Network Security
+- Use HTTPS in production
+- Implement CORS properly
+- Validate WebSocket connections
+- Monitor for suspicious activity
+
+## Troubleshooting
+
+### Common Issues
+- WebRTC connection failures: Check STUN server connectivity
+- File transfer issues: Verify chunk size and memory limits
+- Database connection problems: Check MongoDB connection string
+- Build failures: Clear Turborepo cache and node_modules
+
+### Debug Tools
+- Use browser dev tools for WebRTC debugging
+- Monitor WebSocket connections
+- Check MongoDB logs
+- Use Turborepo's --verbose flag for build debugging
+
+## Additional Resources
+
+### Documentation
+- [Turborepo Documentation](https://turbo.build/repo/docs)
+- [WebRTC API Documentation](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API)
+- [Socket.IO Documentation](https://socket.io/docs/)
+- [Mongoose Documentation](https://mongoosejs.com/docs/)
+
+### Best Practices
+- Follow React best practices for hooks and components
+- Use TypeScript strict mode for better type safety
+- Implement proper error boundaries in React
+- Use appropriate design patterns for scalability
+
+Remember to always prioritize code quality, performance, and user experience while maintaining security and reliability in this WebRTC file sharing application. 

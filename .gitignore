@@ -137,3 +137,16 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Ignore production environment files
+apps/api/.env.prod
+.turbo/cookies/1.cookie
+.turbo/cookies/2.cookie
+.turbo/cookies/3.cookie
+.turbo/cookies/4.cookie
+.turbo/cookies/5.cookie
+.turbo/cookies/6.cookie
+.turbo/cookies/7.cookie
+.turbo/cookies/8.cookie
+.turbo/cookies/9.cookie
+.turbo/daemon/22bccc1a4b01d0e6-turbo.log.2025-07-05

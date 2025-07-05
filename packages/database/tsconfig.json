@@ -1,0 +1,10 @@
+{
+  "extends": "@sharedrop/typescript-config/node.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+} 

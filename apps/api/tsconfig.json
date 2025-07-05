@@ -1,0 +1,14 @@
+{
+  "extends": "@sharedrop/typescript-config/node.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"],
+      "@sharedrop/ui": ["../../packages/ui"],
+      "@sharedrop/database": ["../../packages/database"],
+      "@sharedrop/config": ["../../packages/config"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.js"],
+  "exclude": ["node_modules", "dist"]
+} 
