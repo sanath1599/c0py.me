@@ -6,9 +6,34 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 export default defineConfig({
   plugins: [
     react(),
-    nodePolyfills(),
+    nodePolyfills({
+      // Whether to polyfill `global`
+      globals: {
+        Buffer: true,
+        global: true,
+        process: true,
+      },
+      // Whether to polyfill specific globals
+      protocolImports: true,
+    }),
   ],
   optimizeDeps: {
     exclude: ['lucide-react'],
+    include: ['crypto-browserify'],
+  },
+  define: {
+    global: 'globalThis',
+  },
+  resolve: {
+    alias: {
+      crypto: 'crypto-browserify',
+      stream: 'stream-browserify',
+      buffer: 'buffer',
+    },
+  },
+  build: {
+    rollupOptions: {
+      external: [],
+    },
   },
 });
