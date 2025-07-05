@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Radar } from '../components/Radar';
-import { UploadCircle } from '../components/UploadCircle';
-import { FileSharing } from '../components/FileSharing';
+import { LionsDen } from '../components/LionsDen';
 import { RoomModal } from '../components/RoomModal';
 import { ProfileModal } from '../components/ProfileModal';
 import { ToastContainer, Toast } from '../components/Toast';
@@ -147,37 +145,22 @@ export const AppPage: React.FC = () => {
 
       {/* Main content */}
       <main className="p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Radar and Upload Circle */}
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Radar */}
-            <Radar
-              peers={peers}
-              currentUser={currentUser}
-              selectedPeer={selectedPeer}
-              onPeerClick={handlePeerClick}
-              onEditProfile={() => setShowProfileModal(true)}
-              onJoinRoom={() => setShowRoomModal(true)}
-            />
-
-            {/* Upload Circle */}
-            <div className="flex items-start justify-center">
-              <UploadCircle
-                onFilesSelected={handleFilesSelected}
-                selectedFiles={selectedFiles}
-                onFileRemove={handleFileRemove}
-              />
-            </div>
-          </div>
-
-          {/* File Sharing - Full Width */}
-          <FileSharing
-            selectedFiles={selectedFiles}
+        <div className="max-w-7xl mx-auto">
+          {/* Lions Den - New Layout */}
+          <LionsDen
+            peers={peers}
+            currentUser={currentUser}
             selectedPeer={selectedPeer}
+            selectedFiles={selectedFiles}
             transfers={transfers}
+            onPeerClick={handlePeerClick}
             onSendFiles={handleSendFiles}
             onCancelTransfer={handleCancelTransfer}
             onClearSelection={handleClearSelection}
+            onFilesSelected={handleFilesSelected}
+            onFileRemove={handleFileRemove}
+            onEditProfile={() => setShowProfileModal(true)}
+            onJoinRoom={() => setShowRoomModal(true)}
           />
         </div>
       </main>
