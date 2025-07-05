@@ -19,7 +19,7 @@ export const AppPage: React.FC = () => {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [currentUser, setCurrentUser] = useState({
-    id: `user-${crypto.randomUUID()}`,
+    id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name: 'Anonymous',
     emoji: getRandomEmoji(),
     color: getRandomColor()

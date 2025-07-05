@@ -57,7 +57,7 @@ function build_frontend() {
   GENERATE_SOURCEMAP=false DISABLE_ESLINT_PLUGIN=true pnpm build
   sudo mkdir -p "$FRONTEND_DEPLOY_DIR"
   sudo rm -rf "$FRONTEND_DEPLOY_DIR"/*
-  sudo cp -r build/* "$FRONTEND_DEPLOY_DIR/"
+  sudo cp -r dist/* "$FRONTEND_DEPLOY_DIR/"
   cd "$APP_DIR"
   log "Frontend deployed to $FRONTEND_DEPLOY_DIR"
 }
