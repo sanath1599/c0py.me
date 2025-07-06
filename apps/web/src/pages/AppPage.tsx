@@ -24,6 +24,8 @@ import {
 } from '../utils/analytics';
 import { AnalyticsDebug } from '../components/AnalyticsDebug';
 import { DemoModal } from '../components/DemoModal';
+import { IncomingFileModal } from '../components/IncomingFileModal';
+import Confetti from 'react-confetti';
 
 const WORLD_OPTIONS = [
   { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open space, send to anyone' },
@@ -69,7 +71,8 @@ export const AppPage: React.FC = () => {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [activeTransfer, setActiveTransfer] = useState<null | typeof completedReceived[0]>(null);
   const prevCompletedCount = useRef(0);
-  const shownTransferToasts = useRef(new Set<string>());
+  const [shownTransferToasts, setShownTransferToasts] = useState<Set<string>>(new Set());
+  const [transferTimes, setTransferTimes] = useState<Record<string, { start: number; end?: number; duration?: number }>>({});
 
   const [selectedWorld, setSelectedWorld] = useState<WorldType | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,6 +80,7 @@ export const AppPage: React.FC = () => {
   const [showFamilyNotice, setShowFamilyNotice] = useState(false);
   const [pendingWorld, setPendingWorld] = useState<WorldType | null>(null);
   const [showDemo, setShowDemo] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   // Join default jungle room when connection is established
   useEffect(() => {
@@ -122,21 +126,35 @@ export const AppPage: React.FC = () => {
     addToast('info', 'Transfer cancelled');
   };
 
-  // Monitor transfers for completion
+  // Track transfer start and end times
   useEffect(() => {
     transfers.forEach(transfer => {
-      if ((transfer.status === 'completed' || transfer.status === 'failed') && !shownTransferToasts.current.has(transfer.id)) {
-        if (transfer.status === 'completed') {
-          addToast('success', `File transfer completed!`);
-          trackFileTransfer.completed(transfer.file.size, selectedWorld || 'unknown');
-        } else if (transfer.status === 'failed') {
-          addToast('error', `File transfer failed`);
-          trackFileTransfer.failed(selectedWorld || 'unknown');
-        }
-        shownTransferToasts.current.add(transfer.id);
+      // Track start time
+      if ((transfer.status === 'transferring' || transfer.status === 'pending' || transfer.status === 'connecting') && !transferTimes[transfer.id]) {
+        setTransferTimes(prev => ({ ...prev, [transfer.id]: { start: Date.now() } }));
+      }
+      // Track end time and duration
+      if (transfer.status === 'completed' && transferTimes[transfer.id] && !transferTimes[transfer.id].end) {
+        const end = Date.now();
+        const duration = end - transferTimes[transfer.id].start;
+        setTransferTimes(prev => ({ ...prev, [transfer.id]: { ...prev[transfer.id], end, duration } }));
       }
     });
-  }, [transfers, selectedWorld]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transfers]);
+
+  // Toast logic: Only show one toast per completed transfer
+  useEffect(() => {
+    transfers.forEach(transfer => {
+      if (transfer.status === 'completed' && !shownTransferToasts.has(transfer.id)) {
+        addToast('success', `File transfer completed!`);
+        setShownTransferToasts(prev => new Set(prev).add(transfer.id));
+        // Show confetti for the first completed transfer
+        if (!showConfetti) setShowConfetti(true);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transfers]);
 
   const handleClearSelection = () => {
     setSelectedFiles([]);
@@ -319,6 +337,11 @@ const filteredPeers = React.useMemo(() => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 relative">
+      {showConfetti && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999, pointerEvents: 'none' }}>
+          <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={400} />
+        </div>
+      )}
       {/* Global Modal Overlay */}
       {isAnyModalOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[12px] transition-all" style={{ WebkitBackdropFilter: 'blur(12px)' }} />
@@ -422,10 +445,10 @@ const filteredPeers = React.useMemo(() => {
             
             {/* Connection Status */}
             <div className="flex items-center gap-1 md:gap-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
               <span className="text-xs md:text-sm hidden sm:inline" style={{ color: '#2C1B12', opacity: 0.8 }}>
-                {isConnected ? 'Connected' : 'Disconnected'}
-              </span>
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </span>
             </div>
           </div>
         </div>
@@ -433,32 +456,62 @@ const filteredPeers = React.useMemo(() => {
 
       {/* Main content */}
       {selectedWorld && (
-        <main className="p-6">
-          <div className="max-w-7xl mx-auto">
-            {/* Search Bar */}
-            {selectedWorld && (
-              <div className="mb-6 flex justify-center">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => {
-                    setSearchQuery(e.target.value);
-                    if (e.target.value.length > 0) {
-                      trackUserInteraction.searchUsed();
-                    }
-                  }}
-                  placeholder={
-                    selectedWorld === 'jungle' 
-                      ? "Search by name or user ID..." 
-                      : selectedWorld === 'room'
-                      ? "Search room members..."
-                      : "Search family members..."
+        <main className="p-0 md:p-0 w-full">
+          {/* Search Bar */}
+          {selectedWorld && (
+            <div className="mb-6 flex justify-center px-4 md:px-8">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => {
+                  setSearchQuery(e.target.value);
+                  if (e.target.value.length > 0) {
+                    trackUserInteraction.searchUsed();
                   }
-                  className="w-full max-w-md px-4 py-2 rounded-xl border border-orange-200 bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-lg"
-                />
-              </div>
-            )}
-            {/* Lions Den - New Layout */}
+                }}
+                placeholder={
+                  selectedWorld === 'jungle' 
+                    ? "Search by name or user ID..." 
+                    : selectedWorld === 'room'
+                    ? "Search room members..."
+                    : "Search family members..."
+                }
+                className="w-full max-w-md px-4 py-2 rounded-xl border border-orange-200 bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-lg"
+              />
+            </div>
+          )}
+
+          {/* --- New Three-Row Layout --- */}
+
+          {/* Row 1: Transfer Progress (current transfers only) */}
+          {transfers.some(t => t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting') && (
+            <div className="w-full px-0 md:px-0 mb-8">
+              <LionsDen
+                peers={filteredPeers}
+                currentUser={currentUser}
+                selectedPeer={selectedPeer}
+                selectedFiles={selectedFiles}
+                transfers={transfers}
+                currentWorld={selectedWorld}
+                incomingFiles={incomingFiles}
+                onPeerClick={handlePeerClick}
+                onSendFiles={handleSendFiles}
+                onCancelTransfer={handleCancelTransfer}
+                onClearSelection={handleClearSelection}
+                onFilesSelected={handleFilesSelected}
+                onFileRemove={handleFileRemove}
+                onEditProfile={() => setShowProfileModal(true)}
+                onAcceptIncomingFile={acceptIncomingFile}
+                onRejectIncomingFile={rejectIncomingFile}
+                mode="progress"
+                transferTimes={transferTimes}
+              />
+            </div>
+          )}
+
+          {/* Row 2: 3-column grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full px-4 md:px-8 mb-8">
+            {/* Lion's Den (Radar + No cubs text) */}
             <LionsDen
               peers={filteredPeers}
               currentUser={currentUser}
@@ -476,8 +529,83 @@ const filteredPeers = React.useMemo(() => {
               onEditProfile={() => setShowProfileModal(true)}
               onAcceptIncomingFile={acceptIncomingFile}
               onRejectIncomingFile={rejectIncomingFile}
+              mode="den"
+            />
+            {/* Select Prey (Files) */}
+            <LionsDen
+              peers={filteredPeers}
+              currentUser={currentUser}
+              selectedPeer={selectedPeer}
+              selectedFiles={selectedFiles}
+              transfers={transfers}
+              currentWorld={selectedWorld}
+              incomingFiles={incomingFiles}
+              onPeerClick={handlePeerClick}
+              onSendFiles={handleSendFiles}
+              onCancelTransfer={handleCancelTransfer}
+              onClearSelection={handleClearSelection}
+              onFilesSelected={handleFilesSelected}
+              onFileRemove={handleFileRemove}
+              onEditProfile={() => setShowProfileModal(true)}
+              onAcceptIncomingFile={acceptIncomingFile}
+              onRejectIncomingFile={rejectIncomingFile}
+              mode="prey"
+            />
+            {/* Target Cub */}
+            <LionsDen
+              peers={filteredPeers}
+              currentUser={currentUser}
+              selectedPeer={selectedPeer}
+              selectedFiles={selectedFiles}
+              transfers={transfers}
+              currentWorld={selectedWorld}
+              incomingFiles={incomingFiles}
+              onPeerClick={handlePeerClick}
+              onSendFiles={handleSendFiles}
+              onCancelTransfer={handleCancelTransfer}
+              onClearSelection={handleClearSelection}
+              onFilesSelected={handleFilesSelected}
+              onFileRemove={handleFileRemove}
+              onEditProfile={() => setShowProfileModal(true)}
+              onAcceptIncomingFile={acceptIncomingFile}
+              onRejectIncomingFile={rejectIncomingFile}
+              mode="target"
             />
           </div>
+
+          {/* Row 3: Transfer History Table (completed transfers only) */}
+          <div className="w-full px-0 md:px-0 mb-8">
+            <LionsDen
+              peers={filteredPeers}
+              currentUser={currentUser}
+              selectedPeer={selectedPeer}
+              selectedFiles={selectedFiles}
+              transfers={transfers}
+              currentWorld={selectedWorld}
+              incomingFiles={incomingFiles}
+              onPeerClick={handlePeerClick}
+              onSendFiles={handleSendFiles}
+              onCancelTransfer={handleCancelTransfer}
+              onClearSelection={handleClearSelection}
+              onFilesSelected={handleFilesSelected}
+              onFileRemove={handleFileRemove}
+              onEditProfile={() => setShowProfileModal(true)}
+              onAcceptIncomingFile={acceptIncomingFile}
+              onRejectIncomingFile={rejectIncomingFile}
+              mode="history"
+              transferTimes={transferTimes}
+            />
+          </div>
+
+          {/* Incoming File Modal (always visible when needed) */}
+          {incomingFiles && incomingFiles.length > 0 && (
+            <IncomingFileModal
+              isOpen={true}
+              file={incomingFiles[0]}
+              onAccept={() => acceptIncomingFile(incomingFiles[0].id)}
+              onReject={() => rejectIncomingFile(incomingFiles[0].id)}
+            />
+          )}
         </main>
       )}
 

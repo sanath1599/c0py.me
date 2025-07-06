@@ -223,7 +223,7 @@ src/
 
 ### Docker Deployment
 
-```bash
+   ```bash
 # Build and run with Docker
 docker build -t c0py-me .
 docker run -p 3001:3001 c0py-me

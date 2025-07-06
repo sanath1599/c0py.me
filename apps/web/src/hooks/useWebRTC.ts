@@ -35,7 +35,7 @@ export const useWebRTC = (
     transferId: string;
   }>>([]);
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
-  const receivedFilesRef = useRef<Map<string, { name: string; size: number; type: string; chunks: ArrayBuffer[] }>>(new Map());
+  const receivedFilesRef = useRef<Map<string, { name: string; size: number; type: string; chunks: ArrayBuffer[]; startTime: number }>>(new Map());
   const pendingFilesRef = useRef<Map<string, { file: File; peer: any; transferId: string }>>(new Map());
   const [completedReceived, setCompletedReceived] = useState<Array<{
     id: string;
@@ -118,11 +118,11 @@ export const useWebRTC = (
             const message = JSON.parse(event.data);
             if (message.type === 'file-accepted' && message.transferId === transferId) {
               console.log('📤 File accepted, starting transfer');
-              setTransfers(prev => prev.map(t =>
-                t.id === transferId ? { ...t, status: 'transferring' } : t
-              ));
-              // Start file transfer
-              sendFileInChunks(dataChannel, file, transferId);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'transferring' } : t
+        ));
+        // Start file transfer
+        sendFileInChunks(dataChannel, file, transferId);
             } else if (message.type === 'file-rejected' && message.transferId === transferId) {
               console.log('📤 File rejected');
               setTransfers(prev => prev.map(t =>
@@ -137,7 +137,7 @@ export const useWebRTC = (
       };
       dataChannel.onerror = (error) => {
         console.error('❌ Data channel error:', error);
-        setTransfers(prev => prev.map(t =>
+        setTransfers(prev => prev.map(t => 
           t.id === transferId ? { ...t, status: 'failed' } : t
         ));
       };
@@ -160,7 +160,7 @@ export const useWebRTC = (
       });
     } catch (error) {
       console.error('❌ Error sending file:', error);
-      setTransfers(prev => prev.map(t =>
+      setTransfers(prev => prev.map(t => 
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
     }
@@ -300,7 +300,8 @@ export const useWebRTC = (
                     name: message.name,
                     size: message.size,
                     type: message.fileType,
-                    chunks: []
+                    chunks: [],
+                    startTime: Date.now()
                   });
                   // Only add transfer if not already present for this peer and file
                   setTransfers(prev => {
@@ -319,12 +320,12 @@ export const useWebRTC = (
                       );
                     } else {
                       // Add new transfer if not present
-                      const transferId = `receive-${Date.now()}-${Math.random()}`;
+                  const transferId = `receive-${Date.now()}-${Math.random()}`;
                       return [
                         ...prev,
                         {
-                          id: transferId,
-                          file: new File([], message.name, { type: message.fileType }),
+                    id: transferId,
+                    file: new File([new ArrayBuffer(message.size)], message.name, { type: message.fileType }),
                           peer: { 
                             id: from, 
                             name: getPeerName(from), 
@@ -332,8 +333,10 @@ export const useWebRTC = (
                             color: '#F6C148', 
                             isOnline: true 
                           },
-                          status: 'transferring',
-                          progress: 0
+                    status: 'transferring',
+                          progress: 0,
+                          speed: 0,
+                          timeRemaining: 0
                         }
                       ];
                     }
@@ -362,7 +365,7 @@ export const useWebRTC = (
                     ]);
                     receivedFilesRef.current.delete(from);
                     // Update transfer status
-                    setTransfers(prev => prev.map(t =>
+                    setTransfers(prev => prev.map(t => 
                       t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
                     ));
                     
@@ -394,10 +397,20 @@ export const useWebRTC = (
               if (receivedFile) {
                 receivedFile.chunks.push(event.data);
                 
-                // Update progress
-                const progress = (receivedFile.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0) / receivedFile.size) * 100;
+                // Calculate progress, speed, and ETA
+                const totalReceived = receivedFile.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+                const progress = (totalReceived / receivedFile.size) * 100;
+                const elapsed = Date.now() - receivedFile.startTime;
+                const speed = elapsed > 0 ? totalReceived / (elapsed / 1000) : 0; // bytes per second
+                const timeRemaining = speed > 0 ? (receivedFile.size - totalReceived) / speed : 0;
+                
                 setTransfers(prev => prev.map(t => 
-                  t.peer.id === from && t.status === 'transferring' ? { ...t, progress: Math.round(progress) } : t
+                  t.peer.id === from && t.status === 'transferring' ? { 
+                    ...t, 
+                    progress: Math.round(progress),
+                    speed: Math.round(speed),
+                    timeRemaining: Math.round(timeRemaining)
+                  } : t
                 ));
               }
             }
@@ -479,7 +492,7 @@ export const useWebRTC = (
       const transferId = `receive-${Date.now()}-${Math.random()}`;
       setTransfers(prev => [...prev, {
         id: transferId,
-        file: new File([], incomingFile.fileName, { type: incomingFile.fileType }),
+        file: new File([new ArrayBuffer(incomingFile.fileSize)], incomingFile.fileName, { type: incomingFile.fileType }),
         peer: { 
           id: incomingFile.from, 
           name: getPeerName(incomingFile.from), 
@@ -488,7 +501,9 @@ export const useWebRTC = (
           isOnline: true 
         },
         status: 'transferring',
-        progress: 0
+        progress: 0,
+        speed: 0,
+        timeRemaining: 0
       }]);
       
       // Set up file receiving
@@ -496,7 +511,8 @@ export const useWebRTC = (
         name: incomingFile.fileName,
         size: incomingFile.fileSize,
         type: incomingFile.fileType,
-        chunks: []
+        chunks: [],
+        startTime: Date.now()
       });
       
       console.log('✅ File acceptance sent, transfer started');
