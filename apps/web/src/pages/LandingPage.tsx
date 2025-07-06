@@ -55,10 +55,28 @@
          <div className="max-w-6xl w-full">
            {/* ---------------- HERO ---------------- */}
            <motion.div className="text-center mb-20" {...fadeUp()}>
-             {/* logo */}
+             {/* logo and Product Hunt badge */}
              <motion.div className="mb-8" {...fadeUp(0.2)}>
-               <div className="w-44 h-44 mx-auto flex items-center justify-center rounded-full backdrop-blur-xl bg-white/40 ring-1 ring-white/60 shadow-lg">
-                 <img src="/favicon.gif" alt="c0py.me" className="w-36 h-36 select-none" />
+               <div className="w-44 h-44 mx-auto flex items-center justify-center rounded-full backdrop-blur-xl bg-white/40 ring-1 ring-white/60 shadow-lg mb-6">
+                 <img src="/logo.png" alt="c0py.me" className="w-36 h-36 select-none" />
+               </div>
+               
+               {/* Product Hunt Badge */}
+               <div className="flex justify-center">
+                 <a 
+                   href="https://www.producthunt.com/products/c0py-me?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-c0py&#0045;me&#0045;2" 
+                   target="_blank" 
+                   rel="noopener noreferrer"
+                   className="inline-block transition-transform hover:scale-105"
+                 >
+                   <img 
+                     src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=989111&theme=light&t=1751830203700" 
+                     alt="c0py.me - Secure, anonymous p2p file sharing | Product Hunt" 
+                     style={{ width: '250px', height: '54px' }} 
+                     width="250" 
+                     height="54" 
+                   />
+                 </a>
                </div>
              </motion.div>
    
@@ -150,7 +168,7 @@
              <p className="text-lg text-neutral-700/70">
                Open-source • React 18 • WebRTC • Socket.IO • TypeScript
              </p>
-   
+
              <a
                href="https://www.linkedin.com/in/sanathswaroop/"
                target="_blank"
