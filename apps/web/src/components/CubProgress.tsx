@@ -72,11 +72,12 @@ export const CubProgress: React.FC<CubProgressProps> = ({
           transition={{ duration: 0.5, ease: "easeOut" }}
         />
         {/* Cub PNG at the tip, updated instantly */}
-        {showCub && (
-          <div
+        {showCub && clampedProgress >= 1 && (
+          <motion.div
             className="absolute flex items-end"
+            animate={{ left: `calc(${Math.round(clampedProgress)}% - 2rem)` }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
             style={{
-              left: `calc(${Math.round(clampedProgress)}% - 2rem)`, // exactly at displayed %
               bottom: '100%', // align bottom of cub with top of bar
               zIndex: 10
             }}
@@ -93,7 +94,7 @@ export const CubProgress: React.FC<CubProgressProps> = ({
                 style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}
               />
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </div>
       {/* Progress Info */}
