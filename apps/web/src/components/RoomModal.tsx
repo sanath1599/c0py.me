@@ -130,11 +130,11 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div
+      <motion.div
           className="fixed inset-0 z-50 flex items-center justify-center"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
         >
           {/* overlay */}
           <div className="absolute inset-0 bg-black/50 backdrop-blur-md z-0" />
@@ -167,8 +167,8 @@ export const RoomModal: React.FC<RoomModalProps> = ({
               </div>
 
               {/* Close button */}
-              <button
-                type="button"
+                <button
+                  type="button"
                 onClick={onClose}
                 aria-label="Close room modal"
                 className="absolute top-5 right-5 p-2 rounded-full hover:bg-white/30 focus:bg-white/40 transition-colors focus:outline-none border border-white/30 shadow focus:ring-2 focus:ring-orange-400"
@@ -223,17 +223,17 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                 >
                   {tab === 'create' ? 'Create Room' : 'Join Room'}
                 </SubmitButton>
-              </form>
+            </form>
 
               {/* Privacy info */}
               <div className="mt-8 p-3 rounded-lg border border-orange-100/60 bg-white/40 backdrop-blur-[6px] shadow-sm w-full max-w-sm mx-auto">
                 <p className="text-xs text-center font-medium text-orange-700/90">
                   <strong>Room Privacy:</strong> Only users with the room code can join. Files are shared directly between room members.
-                </p>
-              </div>
-            </GlassCard>
-          </motion.div>
+              </p>
+            </div>
+          </GlassCard>
         </motion.div>
+      </motion.div>
       )}
     </AnimatePresence>
   );
