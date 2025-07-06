@@ -55,6 +55,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [hoveredPeer, setHoveredPeer] = useState<string | null>(null);
   const [denPulse, setDenPulse] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const otherPeers = peers.filter(peer => peer.id !== currentUser.id);
   const isRoomOwner = currentUser.name.toLowerCase().includes('lion') || currentUser.emoji === '🦁';
 
@@ -64,35 +65,44 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     setDenPulse(hasActiveTransfers);
   }, [transfers]);
 
-      const handleDragOver = (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragOver(true);
-      trackUserInteraction.dragDrop();
-    };
+  // Pulse animation when peers are present
+  useEffect(() => {
+    setDenPulse(otherPeers.length > 0);
+  }, [otherPeers.length]);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+    trackUserInteraction.dragDrop();
+  };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
   };
 
-      const handleDrop = (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragOver(false);
-      const files = Array.from(e.dataTransfer.files);
-      onFilesSelected(files);
-      trackUserInteraction.dragDrop();
-    };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    onFilesSelected(files);
+    trackUserInteraction.dragDrop();
+  };
 
   const handleClick = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.onchange = (e) => {
-      const files = Array.from((e.target as HTMLInputElement).files || []);
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
       onFilesSelected(files);
-    };
-    input.click();
-    trackUserInteraction.fileSelected(1);
+      trackUserInteraction.fileSelected(files.length);
+    }
+    // Reset the input value so the same file can be selected again
+    e.target.value = '';
   };
 
   const handleSend = () => {
@@ -123,6 +133,16 @@ export const LionsDen: React.FC<LionsDenProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        onChange={handleFileInputChange}
+        className="hidden"
+        accept="*/*"
+      />
+
       <IncomingFileModal
         isOpen={!!currentIncomingFile}
         file={currentIncomingFile}
