@@ -16,27 +16,37 @@ jobs:
         
     - name: Deploy to backend.c0py.me
       run: |
+        # Create JSON payload with proper escaping
+        COMMIT_MESSAGE=$(echo '${{ github.event.head_commit.message }}' | jq -Rs .)
+        
         # Trigger webhook for backend deployment
         curl -X POST \
           -H "Content-Type: application/json" \
           -H "X-GitHub-Event: push" \
           -H "X-GitHub-Delivery: ${{ github.run_id }}" \
           -H "User-Agent: GitHub-Hookshot/$(openssl rand -hex 8)" \
-          -d '{
-            "ref": "refs/heads/main",
-            "repository": {
-              "name": "sharedrop",
-              "full_name": "${{ github.repository }}",
-              "clone_url": "${{ github.server_url }}/${{ github.repository }}.git"
+          -d "{
+            \"ref\": \"refs/heads/main\",
+            \"repository\": {
+              \"name\": \"sharedrop\",
+              \"full_name\": \"${{ github.repository }}\",
+              \"clone_url\": \"${{ github.server_url }}/${{ github.repository }}.git\"
             },
-            "commits": [{
-              "id": "${{ github.sha }}",
-              "message": "${{ github.event.head_commit.message }}",
-              "author": {
-                "name": "${{ github.actor }}"
+            \"commits\": [{
+              \"id\": \"${{ github.sha }}\",
+              \"message\": $COMMIT_MESSAGE,
+              \"author\": {
+                \"name\": \"${{ github.actor }}\"
               }
-            }]
-          }' \
+            }],
+            \"head_commit\": {
+              \"id\": \"${{ github.sha }}\",
+              \"message\": $COMMIT_MESSAGE,
+              \"author\": {
+                \"name\": \"${{ github.actor }}\"
+              }
+            }
+          }" \
           https://backend.c0py.me/webhook/deploy
           
     - name: Wait for deployment
