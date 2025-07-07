@@ -9,7 +9,7 @@ import React, {
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Globe, Lock, RefreshCw, Copy } from 'lucide-react';
 import { GlassCard } from './GlassCard';
-import { trackRoomEvents } from '../utils/analytics';
+import { logUserAction } from '../utils/eventLogger';
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -80,21 +80,39 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   /* ---------------------------------- */
 
   const handleRandom = useCallback(() => {
+    logUserAction.processStarted('room_creation', 'generate_room_id', { tab });
+    
     const newRoomId = generateRandomRoomId();
+    
+    logUserAction.processStep('room_creation', 'room_id_generated', { 
+      roomId: newRoomId,
+      tab 
+    });
+    
     setRoomId(newRoomId);
     setTouched(true);
     setCopied(false);
-    trackRoomEvents.created(newRoomId);
-  }, []);
+    
+    logUserAction.roomCreated(newRoomId, 'room');
+    logUserAction.processCompleted('room_creation', 'room_id_ready', { 
+      roomId: newRoomId,
+      tab 
+    });
+  }, [tab]);
 
   const handleCopy = useCallback(() => {
     if (!roomId) return;
+
+    logUserAction.processStarted('room_code_copy', 'copy_initiated', { roomId });
 
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(roomId).then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 1200);
-        trackRoomEvents.copied(roomId);
+        logUserAction.roomCodeCopied(roomId);
+        logUserAction.processCompleted('room_code_copy', 'copy_successful', { roomId });
+      }).catch((error) => {
+        logUserAction.processFailed('room_code_copy', 'copy_failed', error.message, { roomId });
       });
     }
   }, [roomId]);
@@ -108,18 +126,49 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const trimmed = roomId.trim();
+    const processName = tab === 'create' ? 'room_creation' : 'room_joining';
+
+    logUserAction.processStarted(processName, 'form_submitted', { 
+      roomId: trimmed,
+      tab 
+    });
 
     if (!isValidRoomId(trimmed)) {
       setTouched(true);
+      logUserAction.processFailed(processName, 'invalid_room_id', 'Invalid room ID format', { 
+        roomId: trimmed,
+        tab 
+      });
       return;
     }
 
+    logUserAction.processStep(processName, 'validation_passed', { 
+      roomId: trimmed,
+      tab 
+    });
+
     setSubmitting(true);
+    
+    logUserAction.processStep(processName, 'processing_request', { 
+      roomId: trimmed,
+      tab 
+    });
+    
     await new Promise((res) => setTimeout(res, 700)); // fake latency
     setSubmitting(false);
 
+    logUserAction.processStep(processName, 'calling_join_room', { 
+      roomId: trimmed,
+      tab 
+    });
+
     onJoinRoom(trimmed);
     onClose();
+    
+    logUserAction.processCompleted(processName, 'room_action_completed', { 
+      roomId: trimmed,
+      tab 
+    });
   };
 
   const showError = touched && !isValidRoomId(roomId);

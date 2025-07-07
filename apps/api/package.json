@@ -10,7 +10,12 @@
     "clean": "rm -rf dist",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["webrtc", "file-sharing", "socket.io", "redis"],
+  "keywords": [
+    "webrtc",
+    "file-sharing",
+    "socket.io",
+    "redis"
+  ],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.12.4",
@@ -20,12 +25,14 @@
     "express": "^5.1.0",
     "ioredis": "^5.6.1",
     "redis": "^5.5.6",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/node": "^20.19.4",
+    "@types/uuid": "^10.0.0",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"

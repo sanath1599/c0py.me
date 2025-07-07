@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import redisService, { PendingRequest } from './redis';
+import logsRouter from './routes/logs';
 
 const router: express.Router = express.Router();
 
@@ -309,5 +310,8 @@ router.get('/webrtc/pending/:receiverId', (req: Request, res: Response) => {
       res.status(500).json({ error: 'Failed to retrieve pending signals' });
     });
 });
+
+// Mount logs routes
+router.use('/logs', logsRouter);
 
 export default router; 

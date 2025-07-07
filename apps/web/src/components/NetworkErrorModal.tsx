@@ -373,7 +373,15 @@ export const NetworkErrorModal: React.FC<NetworkErrorModalProps> = ({
             {/* Error Timestamp */}
             <div className="mt-4 text-center">
               <p className="text-xs" style={{ color: '#A6521B', opacity: 0.6 }}>
-                Error occurred at {new Date(error.timestamp).toLocaleTimeString()}
+                Error occurred at {new Date(error.timestamp).toLocaleString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  hour12: true
+                })}
               </p>
             </div>
           </GlassCard>

@@ -13,15 +13,8 @@ import { generateRandomUsername } from '../utils/names';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
-import { Globe, Lock, Wifi, Play } from 'lucide-react';
-import { 
-  trackWorldSelection, 
-  trackRoomEvents, 
-  trackFileTransfer, 
-  trackUserInteraction,
-  trackError,
-  trackPrivacyEvents 
-} from '../utils/analytics';
+import { Globe, Lock, Wifi, Play, FileText } from 'lucide-react';
+import { logUserAction, logSystemEvent } from '../utils/eventLogger';
 
 import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
@@ -35,7 +28,11 @@ const WORLD_OPTIONS = [
 ] as const;
 type WorldType = typeof WORLD_OPTIONS[number]['key'];
 
-export const AppPage: React.FC = () => {
+interface AppPageProps {
+  onNavigateToLog: () => void;
+}
+
+export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -128,24 +125,61 @@ export const AppPage: React.FC = () => {
 
   const handlePeerClick = (peer: Peer) => {
     setSelectedPeer(peer);
-    trackUserInteraction.peerSelected();
+    logUserAction.peerSelected(peer.id, peer.name);
   };
 
   const handleSendFiles = async (files: File[], peer: Peer) => {
+    const processName = 'file_transfer';
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    const fileTypes = [...new Set(files.map(file => file.type))];
+    
     try {
-      // Track file transfer started
-      trackFileTransfer.started(files.length, selectedWorld || 'unknown');
+      // Start file transfer process
+      logUserAction.processStarted(processName, 'transfer_initiated', { 
+        peerId: peer.id, 
+        peerName: peer.name,
+        fileCount: files.length, 
+        totalSize,
+        fileTypes 
+      });
       
-      // Send each file individually
-      for (const file of files) {
+      logUserAction.transferInitiated(peer.id, files.length, totalSize);
+      
+      // Log each file being sent
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        logUserAction.processStep(processName, `sending_file_${i + 1}`, {
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+          fileIndex: i + 1,
+          totalFiles: files.length
+        });
+        
         await sendFile(file, peer);
       }
+      
       addToast('success', `Sending ${files.length} file(s) to ${peer.name}...`);
       setSelectedFiles([]); // Clear selection after sending
+      
+      logUserAction.processCompleted(processName, 'transfer_sent', {
+        peerId: peer.id,
+        peerName: peer.name,
+        fileCount: files.length,
+        totalSize
+      });
+      
     } catch (error) {
       console.error('Failed to send files:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addToast('error', `Failed to send files to ${peer.name}`);
-      trackError('file_transfer', `Failed to send files to ${peer.name}`);
+      logSystemEvent.error('file_transfer', `Failed to send files to ${peer.name}`, { peerId: peer.id, fileCount: files.length });
+      logUserAction.processFailed(processName, 'transfer_failed', errorMessage, {
+        peerId: peer.id,
+        peerName: peer.name,
+        fileCount: files.length,
+        totalSize
+      });
     }
   };
 
@@ -195,13 +229,65 @@ export const AppPage: React.FC = () => {
 
   const handleFilesSelected = (files: File[]) => {
     setSelectedFiles(prev => [...prev, ...files]);
-    trackUserInteraction.fileSelected(files.length);
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    const fileTypes = [...new Set(files.map(file => file.type))];
+    logUserAction.filesSelected(files.length, totalSize, fileTypes);
   };
 
   const handleProfileUpdate = (profile: { name: string; emoji: string; color: string }) => {
-    setCurrentUser(prev => ({ ...prev, ...profile }));
-    updateProfile(profile.name, profile.color, profile.emoji);
-    trackUserInteraction.profileUpdated();
+    const processName = 'profile_update';
+    const oldName = currentUser.name;
+    const oldEmoji = currentUser.emoji;
+    const oldColor = currentUser.color;
+    
+    try {
+      logUserAction.processStarted(processName, 'profile_update_initiated', {
+        oldName,
+        newName: profile.name,
+        oldEmoji,
+        newEmoji: profile.emoji,
+        oldColor,
+        newColor: profile.color
+      });
+      
+      setCurrentUser(prev => ({ ...prev, ...profile }));
+      
+      logUserAction.processStep(processName, 'profile_updated_locally', {
+        newName: profile.name,
+        newEmoji: profile.emoji,
+        newColor: profile.color
+      });
+      
+      updateProfile(profile.name, profile.color, profile.emoji);
+      
+      logUserAction.processStep(processName, 'profile_synced_to_server', {
+        newName: profile.name,
+        newEmoji: profile.emoji,
+        newColor: profile.color
+      });
+      
+      logUserAction.profileUpdated('name', oldName, profile.name);
+      
+      logUserAction.processCompleted(processName, 'profile_update_completed', {
+        oldName,
+        newName: profile.name,
+        oldEmoji,
+        newEmoji: profile.emoji,
+        oldColor,
+        newColor: profile.color
+      });
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logUserAction.processFailed(processName, 'profile_update_failed', errorMessage, {
+        oldName,
+        newName: profile.name,
+        oldEmoji,
+        newEmoji: profile.emoji,
+        oldColor,
+        newColor: profile.color
+      });
+    }
   };
 
   const ZipPreview: React.FC<{ file: File }> = ({ file }) => {
@@ -248,42 +334,57 @@ export const AppPage: React.FC = () => {
   };
 
   const handleWorldSelect = (world: WorldType) => {
-    // Track world selection
-    if (world === 'jungle') {
-      trackWorldSelection.jungle();
-    } else if (world === 'room') {
-      trackWorldSelection.room();
-    } else if (world === 'family') {
-      trackWorldSelection.family();
-    }
+    // Start world selection process
+    logUserAction.processStarted('world_selection', 'world_clicked', { world });
+    logUserAction.worldSelected(world);
 
     if (world === 'room') {
+      logUserAction.processStep('world_selection', 'show_room_modal', { world });
       setShowRoomModal(true);
       setPendingWorld(world);
     } else if (world === 'family') {
+      logUserAction.processStep('world_selection', 'show_family_notice', { world });
       setShowFamilyNotice(true);
       setPendingWorld(world);
     } else {
       // Jungle - direct selection
+      logUserAction.processStep('world_selection', 'direct_selection', { world });
       setSelectedWorld(world);
+      logUserAction.processCompleted('world_selection', 'jungle_selected', { world });
     }
   };
 
   const handleRoomJoin = (roomId: string) => {
     if (isConnected && pendingWorld === 'room') {
-      joinRoom(roomId, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
-      setSelectedWorld('room');
-      setPendingWorld(null);
-      trackRoomEvents.joined(roomId);
+      logUserAction.processStep('world_selection', 'room_join_attempt', { roomId, world: 'room' });
+      
+      try {
+        joinRoom(roomId, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+        setSelectedWorld('room');
+        setPendingWorld(null);
+        logUserAction.roomJoined(roomId, 'room');
+        logUserAction.processCompleted('world_selection', 'room_joined', { roomId, world: 'room' });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        logUserAction.processFailed('world_selection', 'room_join_failed', errorMessage, { roomId, world: 'room' });
+      }
     }
   };
 
   const handleFamilyAccept = () => {
     if (isConnected && pendingWorld === 'family') {
-      joinFamilyRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
-      setSelectedWorld('family');
-      setPendingWorld(null);
-      setShowFamilyNotice(false);
+      logUserAction.processStep('world_selection', 'family_accept_attempt', { world: 'family' });
+      
+      try {
+        joinFamilyRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+        setSelectedWorld('family');
+        setPendingWorld(null);
+        setShowFamilyNotice(false);
+        logUserAction.processCompleted('world_selection', 'family_joined', { world: 'family' });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        logUserAction.processFailed('world_selection', 'family_join_failed', errorMessage, { world: 'family' });
+      }
     }
   };
 
@@ -400,7 +501,6 @@ const filteredPeers = React.useMemo(() => {
               setPendingWorld(null);
             }}
             onJoinRoom={handleRoomJoin}
-            recentRooms={[]}
           />
         )}
       </AnimatePresence>
@@ -456,6 +556,20 @@ const filteredPeers = React.useMemo(() => {
               <Play size={16} className="text-orange-700" />
               <span className="text-xs md:text-sm font-medium hidden sm:inline" style={{ color: '#A6521B' }}>
                 Demo
+              </span>
+            </button>
+
+            {/* Logs Button */}
+            <button
+              onClick={onNavigateToLog}
+              className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
+              style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
+            >
+              <FileText size={16} className="text-orange-700" />
+              <span className="text-xs md:text-sm font-medium hidden sm:inline" style={{ color: '#A6521B' }}>
+                Logs
               </span>
             </button>
 
@@ -515,7 +629,7 @@ const filteredPeers = React.useMemo(() => {
                 onChange={e => {
                   setSearchQuery(e.target.value);
                   if (e.target.value.length > 0) {
-                    trackUserInteraction.searchUsed();
+                    logUserAction.peerSelected('search', 'search_query');
                   }
                 }}
                 placeholder={

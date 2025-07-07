@@ -7,7 +7,7 @@ import { Peer, FileTransfer } from '../types';
 import { formatFileSize } from '../utils/format';
 import { Send, X, CheckCircle, AlertCircle, Loader, File } from 'lucide-react';
 import { IncomingFileModal } from './IncomingFileModal';
-import { trackUserInteraction } from '../utils/analytics';
+import { logUserAction } from '../utils/eventLogger';
 
 interface LionsDenProps {
   peers: Peer[];
@@ -99,7 +99,6 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(true);
-    trackUserInteraction.dragDrop();
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
@@ -111,8 +110,10 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     e.preventDefault();
     setIsDragOver(false);
     const files = Array.from(e.dataTransfer.files);
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    const fileTypes = [...new Set(files.map(file => file.type))];
+    logUserAction.filesSelected(files.length, totalSize, fileTypes);
     onFilesSelected(files);
-    trackUserInteraction.dragDrop();
   };
 
   const handleClick = () => {
@@ -124,8 +125,10 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length > 0) {
+      const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+      const fileTypes = [...new Set(files.map(file => file.type))];
+      logUserAction.filesSelected(files.length, totalSize, fileTypes);
       onFilesSelected(files);
-      trackUserInteraction.fileSelected(files.length);
     }
     // Reset the input value so the same file can be selected again
     e.target.value = '';
@@ -662,7 +665,15 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                       <td className="px-4 py-2">{direction}</td>
                       <td className="px-4 py-2">{formatFileSize(t.file.size)}</td>
                       <td className="px-4 py-2">Completed</td>
-                      <td className="px-4 py-2">{times?.end ? new Date(times.end).toLocaleString() : '-'}</td>
+                      <td className="px-4 py-2">{times?.end ? new Date(times.end).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true
+                      }) : '-'}</td>
                       <td className="px-4 py-2">{times?.duration ? `${(times.duration / 1000).toFixed(1)}s` : '-'}</td>
                     </tr>
                   );

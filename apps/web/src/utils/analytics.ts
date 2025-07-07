@@ -86,15 +86,7 @@ export const trackError = (errorType: string, errorMessage: string) => {
   trackEvent('error_occurred', 'error', `${errorType}: ${errorMessage}`);
 };
 
-// Performance tracking
-export const trackPerformance = {
-  pageLoad: (loadTime: number) => {
-    trackEvent('page_load_time', 'performance', undefined, loadTime);
-  },
-  transferSpeed: (speed: number) => {
-    trackEvent('transfer_speed', 'performance', undefined, speed);
-  },
-};
+
 
 // Privacy-focused tracking (no personal data)
 export const trackPrivacyEvents = {

@@ -1,0 +1,413 @@
+import { v4 as uuid } from 'uuid';
+import { EventEntry } from '../types';
+import { logUploadService } from '../services/logUploadService';
+
+const STORAGE_KEY = '_eventLog';
+const sessionId = uuid();
+
+let inMemoryBuffer: EventEntry[] = [];
+let flushScheduled = false;
+
+function scheduleFlush() {
+  if (flushScheduled) return;
+  flushScheduled = true;
+  
+  const flushFn = () => {
+    try {
+      const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(existing.concat(inMemoryBuffer))
+      );
+      inMemoryBuffer = [];
+    } catch {
+      // silent drop, retry next idle
+    } finally {
+      flushScheduled = false;
+    }
+  };
+
+  if ('requestIdleCallback' in window) {
+    (window as any).requestIdleCallback(flushFn);
+  } else {
+    setTimeout(flushFn, 2000);
+  }
+}
+
+function flushNow() {
+  try {
+    if (inMemoryBuffer.length === 0) return;
+    const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(existing.concat(inMemoryBuffer))
+    );
+    inMemoryBuffer = [];
+    flushScheduled = false;
+  } catch {
+    // silent drop
+  }
+}
+
+export function logEvent(type: string, details: object) {
+  try {
+    const entry: EventEntry = {
+      id: uuid(),
+      type,
+      details,
+      timestamp: Date.now(),
+      sessionId,
+      // userId: get from auth context if available
+    };
+    inMemoryBuffer.push(entry);
+    scheduleFlush();
+  } catch {
+    // swallow any errors
+  }
+}
+
+export function flushEvents(): EventEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export function clearEvents() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // no-op
+  }
+}
+
+// Meaningful event logging with consistent format
+export const logUserAction = {
+  // User interface interactions
+  worldSelected: (world: string, roomId?: string) => {
+    logEvent('user_action', { 
+      action: 'world_selected',
+      world,
+      roomId,
+      category: 'navigation'
+    });
+  },
+  
+  roomJoined: (roomId: string, world: string) => {
+    logEvent('user_action', { 
+      action: 'room_joined',
+      roomId,
+      world,
+      category: 'navigation'
+    });
+  },
+  
+  roomCreated: (roomId: string, world: string) => {
+    logEvent('user_action', { 
+      action: 'room_created',
+      roomId,
+      world,
+      category: 'navigation'
+    });
+  },
+  
+  roomCodeCopied: (roomId: string) => {
+    logEvent('user_action', { 
+      action: 'room_code_copied',
+      roomId,
+      category: 'navigation'
+    });
+  },
+  
+  peerSelected: (peerId: string, peerName: string) => {
+    logEvent('user_action', { 
+      action: 'peer_selected',
+      peerId,
+      peerName,
+      category: 'interaction'
+    });
+  },
+  
+  filesSelected: (fileCount: number, totalSize: number, fileTypes: string[]) => {
+    logEvent('user_action', { 
+      action: 'files_selected',
+      fileCount,
+      totalSize,
+      fileTypes,
+      category: 'file_operation'
+    });
+  },
+  
+  transferInitiated: (peerId: string, fileCount: number, totalSize: number) => {
+    logEvent('user_action', { 
+      action: 'transfer_initiated',
+      peerId,
+      fileCount,
+      totalSize,
+      category: 'file_operation'
+    });
+  },
+  
+  transferCancelled: (transferId: string, reason?: string) => {
+    logEvent('user_action', { 
+      action: 'transfer_cancelled',
+      transferId,
+      reason,
+      category: 'file_operation'
+    });
+  },
+  
+  profileUpdated: (field: string, oldValue: string, newValue: string) => {
+    logEvent('user_action', { 
+      action: 'profile_updated',
+      field,
+      oldValue,
+      newValue,
+      category: 'profile'
+    });
+  },
+
+  // Multi-step process logging
+  processStarted: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('user_action', { 
+      action: 'process_started',
+      processName,
+      step,
+      context,
+      category: 'navigation'
+    });
+  },
+
+  processStep: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('user_action', { 
+      action: 'process_step',
+      processName,
+      step,
+      context,
+      category: 'navigation'
+    });
+  },
+
+  processCompleted: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('user_action', { 
+      action: 'process_completed',
+      processName,
+      step,
+      context,
+      category: 'navigation'
+    });
+  },
+
+  processFailed: (processName: string, step: string, error: string, context?: Record<string, any>) => {
+    logEvent('user_action', { 
+      action: 'process_failed',
+      processName,
+      step,
+      error,
+      context,
+      category: 'navigation'
+    });
+  }
+};
+
+export const logSystemEvent = {
+  // Socket connection events
+  socketConnected: (connectionMode: string, latency?: number) => {
+    logEvent('system_event', { 
+      event: 'socket_connected',
+      connectionMode,
+      latency,
+      category: 'connection'
+    });
+  },
+  
+  socketDisconnected: (reason: string, duration: number) => {
+    logEvent('system_event', { 
+      event: 'socket_disconnected',
+      reason,
+      duration,
+      category: 'connection'
+    });
+  },
+  
+  // WebRTC events
+  webrtcOfferSent: (peerId: string, transferId: string) => {
+    logEvent('system_event', { 
+      event: 'webrtc_offer_sent',
+      peerId,
+      transferId,
+      category: 'webrtc'
+    });
+  },
+  
+  webrtcAnswerReceived: (peerId: string, transferId: string) => {
+    logEvent('system_event', { 
+      event: 'webrtc_answer_received',
+      peerId,
+      transferId,
+      category: 'webrtc'
+    });
+  },
+  
+  webrtcConnectionEstablished: (peerId: string, transferId: string, latency: number) => {
+    logEvent('system_event', { 
+      event: 'webrtc_connection_established',
+      peerId,
+      transferId,
+      latency,
+      category: 'webrtc'
+    });
+  },
+  
+  webrtcConnectionFailed: (peerId: string, transferId: string, reason: string) => {
+    logEvent('system_event', { 
+      event: 'webrtc_connection_failed',
+      peerId,
+      transferId,
+      reason,
+      category: 'webrtc'
+    });
+  },
+  
+  // File transfer progress
+  transferProgress: (transferId: string, progress: number, speed: number, timeRemaining: number) => {
+    logEvent('system_event', { 
+      event: 'transfer_progress',
+      transferId,
+      progress,
+      speed,
+      timeRemaining,
+      category: 'transfer'
+    });
+  },
+  
+  transferCompleted: (transferId: string, duration: number, totalSize: number, averageSpeed: number) => {
+    logEvent('system_event', { 
+      event: 'transfer_completed',
+      transferId,
+      duration,
+      totalSize,
+      averageSpeed,
+      category: 'transfer'
+    });
+  },
+  
+  transferFailed: (transferId: string, reason: string, duration: number) => {
+    logEvent('system_event', { 
+      event: 'transfer_failed',
+      transferId,
+      reason,
+      duration,
+      category: 'transfer'
+    });
+  },
+  
+  // API calls
+  apiCall: (endpoint: string, method: string, status: number, duration: number) => {
+    logEvent('system_event', { 
+      event: 'api_call',
+      endpoint,
+      method,
+      status,
+      duration,
+      category: 'api'
+    });
+  },
+  
+  // Error events
+  error: (errorType: string, errorMessage: string, context?: Record<string, any>) => {
+    logEvent('system_event', { 
+      event: 'error',
+      errorType,
+      errorMessage,
+      context,
+      category: 'error'
+    });
+  },
+  
+
+  
+  // File events
+  fileReceived: (fileType: string, fileSize: number) => {
+    logEvent('system_event', { 
+      event: 'file_received',
+      fileType,
+      fileSize,
+      category: 'transfer'
+    });
+  },
+
+  // Multi-step system process logging
+  systemProcessStarted: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('system_event', { 
+      event: 'system_process_started',
+      processName,
+      step,
+      context,
+      category: 'connection'
+    });
+  },
+
+  systemProcessStep: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('system_event', { 
+      event: 'system_process_step',
+      processName,
+      step,
+      context,
+      category: 'connection'
+    });
+  },
+
+  systemProcessCompleted: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('system_event', { 
+      event: 'system_process_completed',
+      processName,
+      step,
+      context,
+      category: 'connection'
+    });
+  },
+
+  systemProcessFailed: (processName: string, step: string, error: string, context?: Record<string, any>) => {
+    logEvent('system_event', { 
+      event: 'system_process_failed',
+      processName,
+      step,
+      error,
+      context,
+      category: 'error'
+    });
+  }
+};
+
+// Upload logs to backend
+export async function uploadLogsToBackend(): Promise<{ success: boolean; logId?: string; error?: string }> {
+  try {
+    const logs = flushEvents();
+    if (logs.length === 0) {
+      return { success: false, error: 'No logs to upload' };
+    }
+    
+    const result = await logUploadService.uploadLogs(logs, sessionId);
+    return result;
+  } catch (error) {
+    console.error('Failed to upload logs:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
+
+// Get uploaded logs from backend
+export async function getUploadedLogs(sessionId?: string) {
+  return await logUploadService.getUploadedLogs(sessionId);
+}
+
+// Delete uploaded logs from backend
+export async function deleteUploadedLogs(logId: string) {
+  return await logUploadService.deleteUploadedLogs(logId);
+}
+
+export { flushNow }; 
