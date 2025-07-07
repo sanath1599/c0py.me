@@ -13,7 +13,7 @@ import { generateRandomUsername } from '../utils/names';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
-import { Globe, Home, Users, Play } from 'lucide-react';
+import { Globe, Lock, Wifi, Play } from 'lucide-react';
 import { 
   trackWorldSelection, 
   trackRoomEvents, 
@@ -28,9 +28,9 @@ import { IncomingFileModal } from '../components/IncomingFileModal';
 import Confetti from 'react-confetti';
 
 const WORLD_OPTIONS = [
-  { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open space, send to anyone' },
-  { key: 'room', label: 'Room', icon: '🏠', desc: 'Private group room' },
-  { key: 'family', label: 'Family', icon: '👨‍👩‍👧‍👦', desc: 'Same WiFi group' },
+  { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open world - share with anyone globally' },
+  { key: 'room', label: 'Room', icon: '🔒', desc: 'Private room - secure sharing with room code' },
+  { key: 'family', label: 'Family', icon: '📶', desc: 'WiFi family - same network sharing only' },
 ] as const;
 type WorldType = typeof WORLD_OPTIONS[number]['key'];
 
@@ -285,10 +285,11 @@ export const AppPage: React.FC = () => {
         >
           <span className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/30 backdrop-blur-[10px] shadow-lg border border-white/30 mb-3">
             {opt.key === 'jungle' && <Globe size={36} style={{ color: '#A6521B' }} />}
-            {opt.key === 'room' && <Home size={36} style={{ color: '#A6521B' }} />}
-            {opt.key === 'family' && <Users size={36} style={{ color: '#A6521B' }} />}
+            {opt.key === 'room' && <Lock size={36} style={{ color: '#A6521B' }} />}
+            {opt.key === 'family' && <Wifi size={36} style={{ color: '#A6521B' }} />}
           </span>
           <span className="text-xl font-bold mb-1 tracking-tight" style={{ color: value === opt.key ? '#A6521B' : '#2C1B12' }}>{opt.label}</span>
+          <span className="text-xs text-center px-2" style={{ color: '#A6521B', opacity: 0.8 }}>{opt.desc}</span>
          
           {value === opt.key && (
             <span className="absolute -top-3 right-4 bg-orange-400 text-white text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">Selected</span>
@@ -374,6 +375,11 @@ const filteredPeers = React.useMemo(() => {
           <FamilyPrivacyNotice
             onAccept={handleFamilyAccept}
             onCreateRoom={handleFamilyDecline}
+            onJoinJungle={() => {
+              setSelectedWorld('jungle');
+              setShowFamilyNotice(false);
+              setPendingWorld(null);
+            }}
           />
         )}
       </AnimatePresence>
@@ -427,7 +433,7 @@ const filteredPeers = React.useMemo(() => {
                 whileTap={{ scale: 0.95 }}
               >
                 <span className="text-sm md:text-lg">
-                  {selectedWorld === 'jungle' ? '🌍' : selectedWorld === 'room' ? '🏠' : '👨‍👩‍👧‍👦'}
+                  {selectedWorld === 'jungle' ? '🌍' : selectedWorld === 'room' ? '🔒' : '📶'}
                 </span>
                 <span className="text-xs md:text-sm font-medium capitalize hidden sm:inline" style={{ color: '#A6521B' }}>
                   {selectedWorld}
