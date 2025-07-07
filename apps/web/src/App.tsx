@@ -2,32 +2,47 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { LandingPage } from './pages/LandingPage';
 import { AppPage } from './pages/AppPage';
+import { ClientLogPage } from './pages/ClientLogPage';
 import { initAnalytics, trackPageView } from './utils/analytics';
 
+type AppRoute = 'landing' | 'app' | 'client-log';
+
 function App() {
-  const [showApp, setShowApp] = useState(false);
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>('landing');
 
   // Initialize analytics on app load
   useEffect(() => {
     initAnalytics();
   }, []);
 
-  // Track page views when switching between landing and app
+  // Track page views when switching routes
   useEffect(() => {
-    if (showApp) {
-      trackPageView('c0py.me - File Sharing App');
-    } else {
-      trackPageView('c0py.me - Landing Page');
+    switch (currentRoute) {
+      case 'landing':
+        trackPageView('c0py.me - Landing Page');
+        break;
+      case 'app':
+        trackPageView('c0py.me - File Sharing App');
+        break;
+      case 'client-log':
+        trackPageView('c0py.me - Client Event Log');
+        break;
     }
-  }, [showApp]);
+  }, [currentRoute]);
 
-  if (!showApp) {
-    return <LandingPage onGetStarted={() => setShowApp(true)} />;
+  const navigateTo = (route: AppRoute) => {
+    setCurrentRoute(route);
+  };
+
+  switch (currentRoute) {
+    case 'landing':
+      return <LandingPage onGetStarted={() => navigateTo('app')} />;
+    case 'client-log':
+      return <ClientLogPage onBack={() => navigateTo('app')} />;
+    case 'app':
+    default:
+      return <AppPage onNavigateToLog={() => navigateTo('client-log')} />;
   }
-
-  return (
-    <AppPage />
-  );
 }
 
 export default App;

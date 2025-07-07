@@ -31,3 +31,13 @@ export interface SocketEvents {
   'update-profile': (data: { name: string; color: string; emoji: string }) => void;
   'signal': (data: { to: string; from: string; data: SignalData }) => void;
 }
+
+// Client-side event logging types
+export interface EventEntry {
+  id: string;                // uuid.v4()
+  type: string;              // e.g. "click" | "navigation" | "form_submit"
+  details: Record<string, any>;
+  timestamp: number;         // Date.now()
+  sessionId: string;         // generated once per app load
+  userId?: string;           // optional if logged in
+}

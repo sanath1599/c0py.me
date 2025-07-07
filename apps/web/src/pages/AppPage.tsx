@@ -13,7 +13,7 @@ import { generateRandomUsername } from '../utils/names';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
-import { Globe, Lock, Wifi, Play } from 'lucide-react';
+import { Globe, Lock, Wifi, Play, FileText } from 'lucide-react';
 import { 
   trackWorldSelection, 
   trackRoomEvents, 
@@ -35,7 +35,11 @@ const WORLD_OPTIONS = [
 ] as const;
 type WorldType = typeof WORLD_OPTIONS[number]['key'];
 
-export const AppPage: React.FC = () => {
+interface AppPageProps {
+  onNavigateToLog: () => void;
+}
+
+export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -400,7 +404,6 @@ const filteredPeers = React.useMemo(() => {
               setPendingWorld(null);
             }}
             onJoinRoom={handleRoomJoin}
-            recentRooms={[]}
           />
         )}
       </AnimatePresence>
@@ -456,6 +459,20 @@ const filteredPeers = React.useMemo(() => {
               <Play size={16} className="text-orange-700" />
               <span className="text-xs md:text-sm font-medium hidden sm:inline" style={{ color: '#A6521B' }}>
                 Demo
+              </span>
+            </button>
+
+            {/* Logs Button */}
+            <button
+              onClick={onNavigateToLog}
+              className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
+              style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
+            >
+              <FileText size={16} className="text-orange-700" />
+              <span className="text-xs md:text-sm font-medium hidden sm:inline" style={{ color: '#A6521B' }}>
+                Logs
               </span>
             </button>
 

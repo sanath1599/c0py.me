@@ -143,8 +143,10 @@ export const useSocket = () => {
   }, []);
 
   useEffect(() => {
-    // Use VITE_WS_URL from env, fallback to VITE_CLIENT_URL, then ws://localhost:4001
-    const WS_URL = import.meta.env.VITE_WS_URL || import.meta.env.VITE_CLIENT_URL || 'ws://localhost:4001';
+    // Use VITE_WS_URL from env, fallback to VITE_CLIENT_URL, then default to current host
+    const WS_URL = import.meta.env.VITE_WS_URL || 
+                   import.meta.env.VITE_CLIENT_URL || 
+                   (typeof window !== 'undefined' ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:4001` : 'ws://localhost:4001');
     socketRef.current = io(WS_URL, {
       transports: ['websocket'],
       reconnection: true,
