@@ -32,7 +32,7 @@ export interface NetworkDetectionOptions {
 const DEFAULT_OPTIONS: Required<NetworkDetectionOptions> = {
   maxRetries: 5,
   retryDelay: 3000,
-  healthCheckInterval: 5000, // Less frequent checks to reduce false positives
+  healthCheckInterval: 10000, // Much less frequent checks to reduce false positives
   serverHealthUrl: '/api/health',
   enableFallback: true,
 };
@@ -420,7 +420,7 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
     };
 
     const handleOffline = () => {
-      // Debounce: wait 10 seconds (increased from 5), then double-check with health check
+      // Debounce: wait 15 seconds (increased from 10), then double-check with health check
       setTimeout(async () => {
         if (!navigator.onLine) {
           // Double-check with health check
@@ -439,7 +439,7 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
             handleNetworkError({ type: 'offline' });
           }
         }
-      }, 10000); // 10 second debounce (increased from 5)
+      }, 15000); // 15 second debounce (increased from 10)
     };
 
     const handleConnectionChange = () => {
@@ -496,11 +496,11 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
         const consecutiveFailures = networkStatus.lastError?.type === 'server_unreachable' ? 
           (networkStatus.lastError.retryCount || 0) + 1 : 1;
         
-        if (consecutiveFailures >= 2) {
+        if (consecutiveFailures >= 3) {
           handleNetworkError({ type: 'server_unreachable' });
         } else {
           // Just log the failure but don't trigger error handling yet
-          console.warn(`Server health check failed (attempt ${consecutiveFailures}/2)`);
+          console.warn(`Server health check failed (attempt ${consecutiveFailures}/3)`);
         }
       }
     }, config.healthCheckInterval);

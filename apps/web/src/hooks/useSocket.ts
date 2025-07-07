@@ -148,10 +148,11 @@ export const useSocket = () => {
     socketRef.current = io(WS_URL, {
       transports: ['websocket'],
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000,
-      reconnectionDelayMax: 10000,
-      timeout: 30000,
+      reconnectionAttempts: 20,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 60000,
+      forceNew: false,
     });
 
     const socket = socketRef.current;
@@ -405,21 +406,21 @@ export const useSocket = () => {
     // Clear any existing intervals
     stopPingPong();
     
-    // Send ping every 90 seconds (increased from 60)
+    // Send ping every 120 seconds (increased from 90)
     pingIntervalRef.current = setInterval(() => {
       const socket = socketRef.current;
       if (socket && socket.connected) {
         console.log('🏓 Sending ping...');
         socket.emit('ping');
         
-        // Set timeout for pong response (45 seconds - increased from 30)
+        // Set timeout for pong response (60 seconds - increased from 45)
         pongTimeoutRef.current = setTimeout(() => {
           console.log('⚠️ Pong timeout - forcing disconnect');
           // Force disconnect to trigger reconnection
           socket.disconnect();
-        }, 45000);
+        }, 60000);
       }
-    }, 90000);
+    }, 120000);
   }, []);
 
   const stopPingPong = useCallback(() => {
@@ -448,29 +449,28 @@ export const useSocket = () => {
 
   // Listen to network status changes
   useEffect(() => {
-    if (!networkStatus.isOnline && isConnected) {
-      console.log('🌐 Network went offline - updating socket state');
-      // Don't immediately disconnect the socket when network goes offline
-      // Instead, mark it as unstable and let the ping-pong mechanism handle it
+    // Only react to network changes if we have a stable connection
+    // Don't disconnect immediately on network offline events
+    if (!networkStatus.isOnline && isConnected && !isUnstable) {
+      console.log('🌐 Network went offline - marking connection as unstable');
       setIsUnstable(true);
       
-      // Only disconnect if we've been unstable for too long
-      const unstableTimeout = setTimeout(() => {
+      // Give the network time to recover before taking action
+      const recoveryTimeout = setTimeout(() => {
         if (isUnstable && !networkStatus.isOnline) {
-          console.log('⚠️ Network has been offline too long - disconnecting socket');
-          setIsConnected(false);
-          setConnectionMode('none');
-          stopPingPong();
+          console.log('⚠️ Network still offline after recovery period - keeping unstable state');
+          // Don't disconnect, just keep the unstable flag
+          // Let the ping-pong mechanism handle actual connection issues
         }
-      }, 30000); // Wait 30 seconds before forcing disconnect
+      }, 15000); // 15 second recovery period
       
-      return () => clearTimeout(unstableTimeout);
+      return () => clearTimeout(recoveryTimeout);
     } else if (networkStatus.isOnline && isUnstable) {
       // Network is back online and socket was unstable
       console.log('✅ Network restored - clearing unstable flag');
       setIsUnstable(false);
     }
-  }, [networkStatus.isOnline, isConnected, isUnstable, stopPingPong]);
+  }, [networkStatus.isOnline, isConnected, isUnstable]);
 
   return {
     isConnected,
