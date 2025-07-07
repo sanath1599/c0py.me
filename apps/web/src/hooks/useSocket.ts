@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Peer } from '../types';
 import { getRandomEmoji, getRandomColor } from '../utils/colors';
 import { generateRandomUsername } from '../utils/names';
+import { useNetworkDetection } from './useNetworkDetection';
+import { useFallbackConnection } from './useFallbackConnection';
+import { useConnectionRetry } from './useConnectionRetry';
 
 // Random name generator
 const randomNames = [
@@ -21,6 +24,106 @@ export const useSocket = () => {
   const [currentRoom, setCurrentRoom] = useState<string | null>(null);
   const [publicIp, setPublicIp] = useState<string | null>(null);
   const joinedRoomsRef = useRef<Set<string>>(new Set()); // Track joined rooms per connection
+  
+  // Network detection and fallback
+  const { networkStatus, handleNetworkError: originalHandleNetworkError, manualRetry, resetRetryState, restored, restoredSpeed, restoredRtt, clearRestored } = useNetworkDetection({
+    maxRetries: 5,
+    retryDelay: 3000,
+    healthCheckInterval: 10000,
+    serverHealthUrl: '/api/health',
+    enableFallback: true,
+  });
+
+  // Robust connection retry system
+  const { retry: retryConnection, reset: resetRetry, cancel: cancelRetry, state: retryState } = useConnectionRetry(
+    {
+      maxRetries: 8,
+      baseDelay: 2000,
+      maxDelay: 60000,
+      jitterFactor: 0.15,
+      timeoutMs: 15000,
+    },
+    {
+      onRetryStart: () => {
+        console.log('🔄 Starting robust connection retry...');
+      },
+      onRetrySuccess: () => {
+        console.log('✅ Robust connection retry succeeded');
+        setIsConnected(true);
+        setConnectionMode('websocket');
+        resetRetryState();
+        stopFallback();
+        joinedRoomsRef.current.clear();
+        startPingPong();
+      },
+      onRetryFailure: (error, retryCount) => {
+        console.log(`❌ Connection retry ${retryCount} failed:`, error);
+        setIsConnected(false);
+        setConnectionMode('none');
+      },
+      onMaxRetriesExceeded: () => {
+        console.log('🚨 Max connection retries exceeded, trying fallback...');
+        startFallback('api');
+      },
+      onFallback: () => {
+        console.log('🔄 Attempting fallback connection...');
+        setConnectionMode('api');
+      },
+    }
+  );
+
+  // Debounced error handler to prevent flickering
+  const handleNetworkError = useCallback((error: any) => {
+    const now = Date.now();
+    const errorKey = `${error.type || error.message || 'unknown'}`;
+    
+    // Prevent rapid error handling (minimum 3 seconds between same error type)
+    if (lastErrorRef.current === errorKey && (now - lastConnectionTimeRef.current) < 3000) {
+      return;
+    }
+    
+    // Clear any existing debounce
+    if (errorDebounceRef.current) {
+      clearTimeout(errorDebounceRef.current);
+    }
+    
+    lastErrorRef.current = errorKey;
+    lastConnectionTimeRef.current = now;
+    
+    // For offline errors, immediately update socket state
+    if (error.type === 'offline') {
+      setIsConnected(false);
+      setConnectionMode('none');
+    }
+    
+    // Debounce error handling by 2 seconds
+    errorDebounceRef.current = setTimeout(() => {
+      originalHandleNetworkError(error);
+    }, 2000);
+  }, [originalHandleNetworkError]);
+  
+  const { status: fallbackStatus, startFallback, stopFallback, apiFallback, on: onFallbackEvent } = useFallbackConnection({
+    apiBaseUrl: '/api',
+    pollingInterval: 2000,
+    maxRetries: 3,
+    enableLongPolling: true,
+    enableApiFallback: true,
+  });
+  
+  const [connectionMode, setConnectionMode] = useState<'websocket' | 'long-polling' | 'api' | 'none'>('none');
+  const [isUnstable, setIsUnstable] = useState(false);
+  
+  // Ping-pong mechanism
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pongTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPongRef = useRef<number>(Date.now());
+  const pingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Debounce error handling to prevent flickering
+  const errorDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const lastErrorRef = useRef<string | null>(null);
+  const connectionAttemptsRef = useRef<number>(0);
+  const lastConnectionTimeRef = useRef<number>(0);
 
   // Fetch public IP for Family world
   useEffect(() => {
@@ -40,26 +143,119 @@ export const useSocket = () => {
   }, []);
 
   useEffect(() => {
-    // Use VITE_WS_URL from env, fallback to VITE_CLIENT_URL, then ws://localhost:3001
-    const WS_URL = import.meta.env.VITE_WS_URL || import.meta.env.VITE_CLIENT_URL || 'ws://localhost:3001';
+    // Use VITE_WS_URL from env, fallback to VITE_CLIENT_URL, then ws://localhost:4001
+    const WS_URL = import.meta.env.VITE_WS_URL || import.meta.env.VITE_CLIENT_URL || 'ws://localhost:4001';
     socketRef.current = io(WS_URL, {
-      transports: ['websocket']
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
+      timeout: 30000,
     });
 
     const socket = socketRef.current;
 
     socket.on('connect', () => {
       console.log('🔌 Socket connected');
+      // Always mark as connected when socket connects, regardless of network status
       setIsConnected(true);
+      setConnectionMode('websocket');
+      resetRetryState();
+      stopFallback();
       // Clear joined rooms on new connection
       joinedRoomsRef.current.clear();
+      
+      // Start ping-pong mechanism
+      startPingPong();
+      
+      // If network is offline, mark as unstable but keep connection
+      if (!networkStatus.isOnline) {
+        setIsUnstable(true);
+        console.log('⚠️ Socket connected but network is offline - marking as unstable connection');
+      } else {
+        setIsUnstable(false);
+      }
     });
 
-    socket.on('disconnect', () => {
-      console.log('🔌 Socket disconnected');
+    socket.on('disconnect', (reason) => {
+      console.log('🔌 Socket disconnected:', reason);
       setIsConnected(false);
+      setConnectionMode('none');
       // Clear joined rooms on disconnect
       joinedRoomsRef.current.clear();
+      
+      // Stop ping-pong mechanism
+      stopPingPong();
+      
+      // Only handle as error if it's not a normal disconnect, reconnection, or client disconnect
+      if (reason !== 'io client disconnect' && 
+          reason !== 'io server disconnect' && 
+          reason !== 'transport close' &&
+          reason !== 'ping timeout') {
+        handleNetworkError({ type: 'connection_lost', reason });
+      } else {
+        console.log('🔌 Normal disconnect - not triggering error handling');
+      }
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('🔌 Socket connection error:', error);
+      setIsConnected(false);
+      setConnectionMode('none');
+      
+      // Stop ping-pong mechanism
+      stopPingPong();
+      
+      // Use robust retry system for connection errors
+      retryConnection(
+        async () => {
+          // Attempt to reconnect
+          const socket = socketRef.current;
+          if (socket) {
+            socket.connect();
+            // Wait for connection or timeout
+            return new Promise<boolean>((resolve) => {
+              const timeout = setTimeout(() => resolve(false), 10000);
+              const onConnect = () => {
+                clearTimeout(timeout);
+                socket.off('connect', onConnect);
+                socket.off('connect_error', onError);
+                resolve(true);
+              };
+              const onError = () => {
+                clearTimeout(timeout);
+                socket.off('connect', onConnect);
+                socket.off('connect_error', onError);
+                resolve(false);
+              };
+              socket.on('connect', onConnect);
+              socket.on('connect_error', onError);
+            });
+          }
+          return false;
+        },
+        async () => {
+          // Fallback: try API connection
+          console.log('🔄 Trying API fallback connection...');
+          startFallback('api');
+          return fallbackStatus.isActive;
+        }
+      );
+      
+      // Also handle as network error for UI feedback
+      handleNetworkError(error);
+    });
+
+    // Ping-pong event handlers
+    socket.on('pong', () => {
+      lastPongRef.current = Date.now();
+      
+      // Clear any pending pong timeout
+      if (pongTimeoutRef.current) {
+        clearTimeout(pongTimeoutRef.current);
+        pongTimeoutRef.current = null;
+      }
     });
 
     socket.on('peers', (peerList: Peer[]) => {
@@ -94,15 +290,41 @@ export const useSocket = () => {
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [handleNetworkError, resetRetryState, stopFallback]);
+
+  // Setup fallback event listeners
+  useEffect(() => {
+    onFallbackEvent('peers', (peerList: Peer[]) => {
+      console.log('📡 Received peers via fallback:', peerList.length);
+      const peersWithRandomProps = peerList.map(peer => ({
+        ...peer,
+        name: peer.name || generateRandomUsername(),
+        emoji: peer.emoji || getRandomEmoji(),
+        color: peer.color || getRandomColor()
+      }));
+      setPeers(peersWithRandomProps);
+    });
+
+    onFallbackEvent('peer-joined', (peer: Peer) => {
+      console.log('👥 Peer joined via fallback:', peer.name);
+      const peerWithRandomProps = {
+        ...peer,
+        name: peer.name || generateRandomUsername(),
+        emoji: peer.emoji || getRandomEmoji(),
+        color: peer.color || getRandomColor()
+      };
+      setPeers(prev => [...prev.filter(p => p.id !== peer.id), peerWithRandomProps]);
+    });
+
+    onFallbackEvent('peer-left', (peerId: string) => {
+      console.log('👋 Peer left via fallback:', peerId);
+      setPeers(prev => prev.filter(p => p.id !== peerId));
+    });
+  }, [onFallbackEvent]);
 
   const joinRoom = (room: string, userId: string, name: string, color: string, emoji: string) => {
     const socket = socketRef.current;
-    if (!socket || !socket.connected) {
-      console.warn('⚠️ Socket not connected, cannot join room');
-      return;
-    }
-
+    
     // Check if we've already joined this room in this connection
     const roomKey = `${room}-${userId}`;
     if (joinedRoomsRef.current.has(roomKey)) {
@@ -110,10 +332,27 @@ export const useSocket = () => {
       return;
     }
 
-    console.log('🚀 Joining room:', room);
-    socket.emit('join-room', { room, userId, name, color, emoji });
-    joinedRoomsRef.current.add(roomKey);
-    setCurrentRoom(room);
+    if (socket && socket.connected) {
+      // Use WebSocket connection
+      console.log('🚀 Joining room via WebSocket:', room);
+      socket.emit('join-room', { room, userId, name, color, emoji });
+      joinedRoomsRef.current.add(roomKey);
+      setCurrentRoom(room);
+    } else if (fallbackStatus.isActive) {
+      // Use fallback connection
+      console.log('🚀 Joining room via fallback:', room);
+      // For now, just queue the message for fallback
+      // TODO: Implement proper fallback API calls
+      joinedRoomsRef.current.add(roomKey);
+      setCurrentRoom(room);
+    } else {
+      console.warn('⚠️ No connection available, cannot join room');
+      // Try to start fallback connection
+      if (networkStatus.lastError && networkStatus.retryCount >= 5) {
+        console.log('🔄 Starting fallback connection...');
+        startFallback('api');
+      }
+    }
   };
 
   const joinDefaultRoom = (userId: string, name: string, color: string, emoji: string) => {
@@ -161,8 +400,81 @@ export const useSocket = () => {
     };
   };
 
+  // Ping-pong functions
+  const startPingPong = useCallback(() => {
+    // Clear any existing intervals
+    stopPingPong();
+    
+    // Send ping every 90 seconds (increased from 60)
+    pingIntervalRef.current = setInterval(() => {
+      const socket = socketRef.current;
+      if (socket && socket.connected) {
+        console.log('🏓 Sending ping...');
+        socket.emit('ping');
+        
+        // Set timeout for pong response (45 seconds - increased from 30)
+        pongTimeoutRef.current = setTimeout(() => {
+          console.log('⚠️ Pong timeout - forcing disconnect');
+          // Force disconnect to trigger reconnection
+          socket.disconnect();
+        }, 45000);
+      }
+    }, 90000);
+  }, []);
+
+  const stopPingPong = useCallback(() => {
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+    
+    if (pongTimeoutRef.current) {
+      clearTimeout(pongTimeoutRef.current);
+      pongTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Cleanup ping-pong on unmount
+  useEffect(() => {
+    return () => {
+      stopPingPong();
+      
+      // Cleanup error debounce
+      if (errorDebounceRef.current) {
+        clearTimeout(errorDebounceRef.current);
+      }
+    };
+  }, [stopPingPong]);
+
+  // Listen to network status changes
+  useEffect(() => {
+    if (!networkStatus.isOnline && isConnected) {
+      console.log('🌐 Network went offline - updating socket state');
+      // Don't immediately disconnect the socket when network goes offline
+      // Instead, mark it as unstable and let the ping-pong mechanism handle it
+      setIsUnstable(true);
+      
+      // Only disconnect if we've been unstable for too long
+      const unstableTimeout = setTimeout(() => {
+        if (isUnstable && !networkStatus.isOnline) {
+          console.log('⚠️ Network has been offline too long - disconnecting socket');
+          setIsConnected(false);
+          setConnectionMode('none');
+          stopPingPong();
+        }
+      }, 30000); // Wait 30 seconds before forcing disconnect
+      
+      return () => clearTimeout(unstableTimeout);
+    } else if (networkStatus.isOnline && isUnstable) {
+      // Network is back online and socket was unstable
+      console.log('✅ Network restored - clearing unstable flag');
+      setIsUnstable(false);
+    }
+  }, [networkStatus.isOnline, isConnected, isUnstable, stopPingPong]);
+
   return {
     isConnected,
+    isUnstable,
     peers,
     currentRoom,
     publicIp,
@@ -171,6 +483,22 @@ export const useSocket = () => {
     joinFamilyRoom,
     updateProfile,
     sendSignal,
-    onSignal
+    onSignal,
+    // Network detection and fallback
+    networkStatus,
+    connectionMode,
+    fallbackStatus,
+    manualRetry,
+    handleNetworkError,
+    restored,
+    restoredSpeed,
+    restoredRtt,
+    clearRestored,
+    resetRetryState,
+    // Robust retry system
+    retryState,
+    retryConnection,
+    resetRetry,
+    cancelRetry,
   };
 };

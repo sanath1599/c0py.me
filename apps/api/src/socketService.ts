@@ -6,6 +6,8 @@ import redisService from './redis';
 export class SocketService {
   private io: SocketIOServer;
   private peerSockets: Map<string, Socket> = new Map();
+  private lastPingTime: Map<string, number> = new Map();
+  private pingTimeout: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(server: HTTPServer) {
     this.io = new SocketIOServer(server, {
@@ -49,7 +51,26 @@ export class SocketService {
 
       // Handle ping for keep-alive
       socket.on('ping', () => {
+        console.log(`🏓 Ping received from socket: ${socket.id}`);
+        
+        // Update last ping time
+        this.lastPingTime.set(socket.id, Date.now());
+        
+        // Clear existing timeout
+        if (this.pingTimeout.has(socket.id)) {
+          clearTimeout(this.pingTimeout.get(socket.id)!);
+        }
+        
+        // Set new timeout (90 seconds - longer than client's 60s ping interval)
+        const timeoutId = setTimeout(() => {
+          console.warn(`⚠️ Ping timeout for socket: ${socket.id} - forcing disconnect`);
+          socket.disconnect(true);
+        }, 90000);
+        
+        this.pingTimeout.set(socket.id, timeoutId);
+        
         socket.emit('pong');
+        console.log(`🏓 Pong sent to socket: ${socket.id}`);
       });
     });
   }
@@ -187,8 +208,15 @@ export class SocketService {
         console.log(`👋 User ${peer.name} disconnected from room ${peer.roomId}`);
       }
 
-      // Remove socket reference
+      // Remove socket reference and cleanup ping tracking
       this.peerSockets.delete(socket.id);
+      
+      // Cleanup ping tracking
+      this.lastPingTime.delete(socket.id);
+      if (this.pingTimeout.has(socket.id)) {
+        clearTimeout(this.pingTimeout.get(socket.id)!);
+        this.pingTimeout.delete(socket.id);
+      }
     } catch (error) {
       console.error('❌ Error handling disconnect:', error);
     }
@@ -201,6 +229,14 @@ export class SocketService {
 
   public async getConnectedPeers(): Promise<Peer[]> {
     return await redisService.getAllPeers();
+  }
+
+  public getConnectionStats() {
+    return {
+      totalConnections: this.peerSockets.size,
+      pingTimeouts: this.pingTimeout.size,
+      lastPingTimes: Object.fromEntries(this.lastPingTime),
+    };
   }
 
   public async cleanup(): Promise<void> {

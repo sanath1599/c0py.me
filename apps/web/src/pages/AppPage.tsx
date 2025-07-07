@@ -25,6 +25,7 @@ import {
 
 import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
+import { NetworkErrorModal } from '../components/NetworkErrorModal';
 import Confetti from 'react-confetti';
 
 const WORLD_OPTIONS = [
@@ -56,7 +57,32 @@ export const AppPage: React.FC = () => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
-  const { isConnected, peers, currentRoom, publicIp, joinRoom, joinDefaultRoom, joinFamilyRoom, updateProfile, sendSignal, onSignal } = useSocket();
+  const { 
+    isConnected, 
+    peers, 
+    currentRoom, 
+    publicIp, 
+    joinRoom, 
+    joinDefaultRoom, 
+    joinFamilyRoom, 
+    updateProfile, 
+    sendSignal, 
+    onSignal,
+    networkStatus,
+    connectionMode,
+    fallbackStatus,
+    manualRetry,
+    handleNetworkError,
+    restored,
+    restoredSpeed,
+    restoredRtt,
+    clearRestored,
+    resetRetryState,
+    retryState,
+    retryConnection,
+    resetRetry,
+    cancelRetry
+  } = useSocket();
   const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id, addToast, peers);
 
   // Set up signal handling once
@@ -82,10 +108,12 @@ export const AppPage: React.FC = () => {
   const [showDemo, setShowDemo] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
 
-  // Join default jungle room when connection is established
+  // Join rooms when connection is established
   useEffect(() => {
-    if (isConnected && selectedWorld === 'jungle') {
-      joinDefaultRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+    if (isConnected && selectedWorld) {
+      if (selectedWorld === 'jungle') {
+        joinDefaultRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+      }
     }
   }, [isConnected, selectedWorld, currentUser, joinDefaultRoom]);
 
@@ -228,7 +256,7 @@ export const AppPage: React.FC = () => {
     } else if (world === 'family') {
       trackWorldSelection.family();
     }
-    
+
     if (world === 'room') {
       setShowRoomModal(true);
       setPendingWorld(world);
@@ -263,6 +291,11 @@ export const AppPage: React.FC = () => {
     setPendingWorld(null);
     setShowFamilyNotice(false);
     setShowRoomModal(true);
+  };
+
+  // Handle world switching from navbar
+  const handleWorldSwitch = () => {
+    setSelectedWorld(null);
   };
 
   const WorldSwitcher: React.FC<{ value: WorldType | null; onChange: (w: WorldType) => void }> = ({ value, onChange }) => (
@@ -336,6 +369,8 @@ const filteredPeers = React.useMemo(() => {
   // Modal open state
   const isAnyModalOpen = !selectedWorld || showRoomModal || showFamilyNotice || showProfileModal || showTransferModal;
 
+
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 relative">
       {showConfetti && (
@@ -365,6 +400,7 @@ const filteredPeers = React.useMemo(() => {
               setPendingWorld(null);
             }}
             onJoinRoom={handleRoomJoin}
+            recentRooms={[]}
           />
         )}
       </AnimatePresence>
@@ -426,7 +462,7 @@ const filteredPeers = React.useMemo(() => {
             {/* World Indicator */}
             {selectedWorld && (
               <motion.button
-                onClick={() => setSelectedWorld(null)}
+                onClick={handleWorldSwitch}
                 className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
                 style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
                 whileHover={{ scale: 1.05 }}
@@ -451,10 +487,17 @@ const filteredPeers = React.useMemo(() => {
             
             {/* Connection Status */}
             <div className="flex items-center gap-1 md:gap-2">
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+              <div className={`w-2 h-2 rounded-full ${
+                isConnected ? 'bg-green-400' : 
+                networkStatus.isRetrying ? 'bg-yellow-400' : 
+                'bg-red-400'
+              }`} />
               <span className="text-xs md:text-sm hidden sm:inline" style={{ color: '#2C1B12', opacity: 0.8 }}>
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
+                {isConnected ? `Connected (${connectionMode})` : 
+                 networkStatus.isRetrying ? `Retrying (${networkStatus.retryCount}/5)` :
+                 !networkStatus.isOnline ? 'No Internet' :
+                 'Disconnected'}
+              </span>
             </div>
           </div>
         </div>
@@ -621,6 +664,19 @@ const filteredPeers = React.useMemo(() => {
         onClose={() => setShowProfileModal(false)}
         currentProfile={currentUser}
         onSave={handleProfileUpdate}
+      />
+
+      {/* Network Error Modal */}
+      <NetworkErrorModal
+        isOpen={!!networkStatus.lastError || restored}
+        networkStatus={networkStatus}
+        onRetry={manualRetry}
+        onClose={resetRetryState}
+        restored={restored}
+        restoredSpeed={restoredSpeed}
+        restoredRtt={restoredRtt}
+        onClearRestored={clearRestored}
+        retryState={retryState}
       />
 
       {/* Transfer Complete Modal */}

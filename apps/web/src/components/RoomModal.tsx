@@ -377,6 +377,7 @@ const JoinSection: React.FC<JoinSectionProps> = ({
       <RefreshCw size={20} className="mr-1" />
       Generate Random Room Code
     </button>
+    
     {showError && (
       <p className="text-xs mt-2 text-center font-medium text-red-600">
         Room code must be 5-10 letters or numbers (A-Z, 0-9)
