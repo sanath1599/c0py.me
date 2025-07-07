@@ -83,7 +83,7 @@ export const AppPage: React.FC = () => {
     resetRetry,
     cancelRetry
   } = useSocket();
-  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id, addToast, peers);
+  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id, addToast, peers, isConnected);
 
   // Set up signal handling once
   useEffect(() => {

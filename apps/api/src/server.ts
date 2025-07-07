@@ -6,6 +6,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import routes from './routes';
 import { SocketService } from './socketService';
+import redisService from './redis';
 
 const execAsync = promisify(exec);
 
@@ -119,6 +120,10 @@ async function startServer(): Promise<void> {
     
     // Wait a moment for Redis to be ready
     await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Start scheduled cleanup for expired requests
+    redisService.startScheduledCleanup();
+    console.log('🧹 Scheduled cleanup started (every 5 minutes)');
     
     // Start the server
     server.listen(PORT, () => {

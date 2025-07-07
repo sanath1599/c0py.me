@@ -15,6 +15,16 @@ redis.on('connect', () => {
   console.log('✅ Connected to Redis');
 });
 
+export interface PendingRequest {
+  requestId: string;
+  senderId: string;
+  receiverId: string;
+  requestType: 'file-transfer' | 'webrtc-signal';
+  data: any;
+  timestamp: number;
+  expiresAt: number;
+}
+
 export class RedisService {
   private static instance: RedisService;
   private redis: Redis;
@@ -139,6 +149,101 @@ export class RedisService {
   // Close connection
   async close(): Promise<void> {
     await this.redis.quit();
+  }
+
+  // Pending request management
+  async storePendingRequest(request: PendingRequest): Promise<void> {
+    const key = `pending_request:${request.requestId}`;
+    const receiverKey = `receiver_pending:${request.receiverId}`;
+    
+    // Store the request with 5-minute TTL
+    await this.redis.setex(key, 300, JSON.stringify(request));
+    
+    // Add to receiver's pending requests list
+    await this.redis.sadd(receiverKey, request.requestId);
+    await this.redis.expire(receiverKey, 300); // 5 minutes TTL
+    
+    console.log(`💾 Stored pending request ${request.requestId} for receiver ${request.receiverId}`);
+  }
+
+  async getPendingRequest(requestId: string): Promise<PendingRequest | null> {
+    const key = `pending_request:${requestId}`;
+    const data = await this.redis.get(key);
+    
+    if (!data) {
+      return null;
+    }
+    
+    try {
+      return JSON.parse(data);
+    } catch (error) {
+      console.error('❌ Error parsing pending request:', error);
+      return null;
+    }
+  }
+
+  async getReceiverPendingRequests(receiverId: string): Promise<PendingRequest[]> {
+    const receiverKey = `receiver_pending:${receiverId}`;
+    const requestIds = await this.redis.smembers(receiverKey);
+    const requests: PendingRequest[] = [];
+    
+    for (const requestId of requestIds) {
+      const request = await this.getPendingRequest(requestId);
+      if (request) {
+        requests.push(request);
+      }
+    }
+    
+    return requests;
+  }
+
+  async removePendingRequest(requestId: string, receiverId?: string): Promise<void> {
+    const key = `pending_request:${requestId}`;
+    await this.redis.del(key);
+    
+    if (receiverId) {
+      const receiverKey = `receiver_pending:${receiverId}`;
+      await this.redis.srem(receiverKey, requestId);
+    }
+    
+    console.log(`🗑️ Removed pending request ${requestId}`);
+  }
+
+  // Cleanup expired requests
+  async cleanupExpiredRequests(): Promise<void> {
+    // This will be handled automatically by Redis TTL
+    // But we can also clean up orphaned receiver keys
+    const receiverKeys = await this.redis.keys('receiver_pending:*');
+    
+    for (const receiverKey of receiverKeys) {
+      const requestIds = await this.redis.smembers(receiverKey);
+      const validRequests: string[] = [];
+      
+      for (const requestId of requestIds) {
+        const request = await this.getPendingRequest(requestId);
+        if (request) {
+          validRequests.push(requestId);
+        }
+      }
+      
+      // Remove invalid request IDs from the set
+      const invalidRequests = requestIds.filter(id => !validRequests.includes(id));
+      if (invalidRequests.length > 0) {
+        await this.redis.srem(receiverKey, ...invalidRequests);
+      }
+    }
+  }
+
+  // Start scheduled cleanup (run every 5 minutes)
+  startScheduledCleanup(): void {
+    setInterval(async () => {
+      try {
+        await this.cleanupExpiredRequests();
+        console.log('🧹 Scheduled cleanup completed');
+      } catch (error) {
+        console.error('❌ Error during scheduled cleanup:', error);
+      }
+    }, 300000); // 5 minutes
   }
 }
 

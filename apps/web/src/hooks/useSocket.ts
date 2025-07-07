@@ -392,12 +392,21 @@ export const useSocket = () => {
     if (!socket) return;
     
     socket.on('signal', (signalData: { from: string; data: any }) => {
+      console.log('📡 Received signal:', signalData);
       callback(signalData.from, signalData.data);
+    });
+
+    // Handle pending file transfer requests on reconnection
+    socket.on('file-transfer-request', (requestData: { from: string; fileName: string; fileSize: number; fileType: string; transferId: string }) => {
+      console.log('📁 Received pending file transfer request:', requestData);
+      // This will be handled by the WebRTC hook
+      callback(requestData.from, { type: 'file-transfer-request', ...requestData });
     });
     
     // Return cleanup function
     return () => {
       socket.off('signal');
+      socket.off('file-transfer-request');
     };
   };
 

@@ -15,7 +15,8 @@ export const useWebRTC = (
   onSignal: (to: string, from: string, data: any) => void, 
   userId: string,
   addToast?: (type: 'success' | 'error' | 'info', message: string) => void,
-  peers?: Array<{ id: string; name: string; emoji: string; color: string }>
+  peers?: Array<{ id: string; name: string; emoji: string; color: string }>,
+  isConnected?: boolean
 ) => {
   // Helper function to get peer name
   const getPeerName = useCallback((peerId: string) => {
@@ -43,6 +44,60 @@ export const useWebRTC = (
     url: string;
     peer: { id: string; name: string; emoji: string; color: string };
   }>>([]);
+
+  // Store pending request in Redis when receiver is offline
+  const storePendingRequest = useCallback(async (receiverId: string, file: File, transferId: string) => {
+    try {
+      const response = await fetch('/api/file-transfer/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          senderId: userId,
+          receiverId,
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+          transferId
+        }),
+      });
+
+      if (response.ok) {
+        console.log(`💾 Stored pending file transfer request for ${receiverId}`);
+        addToast?.('info', `File transfer request stored for offline user. Will be delivered when they reconnect.`);
+      } else {
+        console.error('❌ Failed to store pending request');
+      }
+    } catch (error) {
+      console.error('❌ Error storing pending request:', error);
+    }
+  }, [userId, addToast]);
+
+  // Store pending WebRTC signal in Redis when receiver is offline
+  const storePendingSignal = useCallback(async (receiverId: string, signalData: any) => {
+    try {
+      const response = await fetch('/api/webrtc/signal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          senderId: userId,
+          receiverId,
+          signalData
+        }),
+      });
+
+      if (response.ok) {
+        console.log(`💾 Stored pending WebRTC signal for ${receiverId}`);
+      } else {
+        console.error('❌ Failed to store pending signal');
+      }
+    } catch (error) {
+      console.error('❌ Error storing pending signal:', error);
+    }
+  }, [userId]);
 
   const createPeerConnection = useCallback((peerId: string) => {
     // Always create a new connection
@@ -83,15 +138,31 @@ export const useWebRTC = (
   };
 
   const sendFile = useCallback(async (file: File, peer: Peer) => {
-    const transferId = `${Date.now()}-${Math.random()}`;
-    const transfer: FileTransfer = {
+    console.log(`📤 Sending file ${file.name} to ${peer.name}`);
+    
+    const transferId = `send-${Date.now()}-${Math.random()}`;
+    
+    // Add to transfers list
+    setTransfers(prev => [...prev, {
       id: transferId,
       file,
       peer,
       status: 'pending',
-      progress: 0
-    };
-    setTransfers(prev => [...prev, transfer]);
+      progress: 0,
+      speed: 0,
+      timeRemaining: 0
+    }]);
+
+    // Check if peer is online
+    if (!peer.isOnline || !isConnected) {
+      console.log(`📦 Peer ${peer.name} is offline, storing request`);
+      await storePendingRequest(peer.id, file, transferId);
+      setTransfers(prev => prev.map(t => 
+        t.id === transferId ? { ...t, status: 'pending' } : t
+      ));
+      return;
+    }
+
     try {
       // Always create a new connection for each transfer
       const pc = createPeerConnection(peer.id);
@@ -164,7 +235,7 @@ export const useWebRTC = (
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
     }
-  }, [createPeerConnection, onSignal, userId]);
+  }, [connections, createPeerConnection, onSignal, userId, storePendingRequest, isConnected]);
 
   const sendFileInChunks = (dataChannel: RTCDataChannel, file: File, transferId: string) => {
     const reader = new FileReader();
@@ -244,6 +315,14 @@ export const useWebRTC = (
 
   const handleSignal = useCallback(async (from: string, data: any) => {
     console.log(`📡 Received signal from ${from}:`, data.type);
+    
+    // If we're not connected, store the signal for later
+    if (!isConnected) {
+      console.log(`📦 Not connected, storing signal for later`);
+      await storePendingSignal(from, data);
+      return;
+    }
+    
     let pc = connections.get(from);
     
     if (data.type === 'offer') {
@@ -445,7 +524,7 @@ export const useWebRTC = (
         await pc.addIceCandidate(data.candidate);
       }
     }
-  }, [connections, createPeerConnection, onSignal, userId, addToast, peers]);
+  }, [connections, createPeerConnection, onSignal, userId, addToast, peers, isConnected, storePendingSignal]);
 
   const cancelTransfer = useCallback((transferId: string) => {
     setTransfers(prev => prev.map(t => 

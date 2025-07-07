@@ -217,7 +217,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   if (mode === 'den') {
     // Only render Lion's Den (radar, user, no cubs text)
     return (
-      <GlassCard className="p-6 relative overflow-hidden">
+      <GlassCard className="p-6 relative overflow-hidden min-h-[550px]">
         <div className="flex items-center justify-between mb-6" style={{ zIndex: 50, position: 'relative' }}>
           <h2 className="text-xl font-bold" style={{ color: '#2C1B12' }}>
             {isRoomOwner ? "Big Lion's Den" : "Lion's Den"}
@@ -238,6 +238,35 @@ export const LionsDen: React.FC<LionsDenProps> = ({
           </div>
         </div>
 
+        {/* Online Statistics */}
+        <div className="mb-6 p-4 bg-white/20 backdrop-blur-sm rounded-lg border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)', zIndex: 50, position: 'relative' }}>
+          <div className="grid grid-cols-2 gap-4 text-center">
+            <div>
+              <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
+                {peers.length}
+              </div>
+              <div className="text-sm" style={{ color: '#A6521B' }}>
+                Total Lions
+              </div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
+                {peers.filter(p => p.isOnline).length}
+              </div>
+              <div className="text-sm" style={{ color: '#A6521B' }}>
+                Online Now
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
+            <div className="text-xs text-center" style={{ color: '#A6521B' }}>
+              {currentWorld === 'jungle' ? '🌍 Global Jungle' : 
+               currentWorld === 'room' ? '🔒 Private Room' :
+               currentWorld === 'family' ? '🏠 Local Network' : '🦁 Lion\'s Den'}
+            </div>
+          </div>
+        </div>
+
         {/* Den Background with Pulse Animation */}
         <motion.div
           className="absolute inset-0 rounded-lg"
@@ -252,7 +281,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
           transition={{ duration: 2, repeat: Infinity }}
         />
 
-        <div className="relative w-64 h-64 mx-auto flex items-center justify-center" style={{ zIndex: 1 }}>
+        <div className="relative w-64 h-64 mx-auto flex items-center justify-center pb-16" style={{ zIndex: 1 }}>
           {/* Den Ring */}
           <motion.div
             className="absolute w-full h-full rounded-full border-4 border-dashed"
@@ -309,7 +338,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
           )}
 
           {/* Big Lion in center */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center pointer-events-auto">
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center pointer-events-auto w-40">
             <motion.div
               animate={isRoomOwner ? { scale: [1, 1.05, 1] } : {}}
               transition={{ duration: 2, repeat: Infinity }}
@@ -320,7 +349,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                 size="xl"
               />
             </motion.div>
-            <div className="mt-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm border z-30" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
+            <div className="mt-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm border z-30 w-full break-words whitespace-normal text-center" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
               <span className="text-sm font-medium" style={{ color: '#2C1B12' }}>
                 You ({currentUser.name})
               </span>
@@ -351,7 +380,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   if (mode === 'prey') {
     // Only render Select Prey (Files) and file input logic
     return (
-      <GlassCard className="p-6">
+      <GlassCard className="p-6 min-h-[550px]">
         <h2 className="text-xl font-bold mb-6" style={{ color: '#2C1B12' }}>Select Prey (Files)</h2>
         {/* File input and drag/drop logic only in prey mode */}
         <input
@@ -456,7 +485,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   if (mode === 'target') {
     // Only render Target Cub
     return (
-      <GlassCard className="p-6">
+      <GlassCard className="p-6 min-h-[550px]">
         <h2 className="text-xl font-bold mb-6" style={{ color: '#2C1B12' }}>Target Cub</h2>
         
         <AnimatePresence mode="wait">

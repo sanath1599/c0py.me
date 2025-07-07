@@ -1,7 +1,7 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { Peer, JoinRoomData, UpdateProfileData, SignalMessage } from './types';
-import redisService from './redis';
+import redisService, { PendingRequest } from './redis';
 
 export class SocketService {
   private io: SocketIOServer;
@@ -99,6 +99,9 @@ export class SocketService {
       // Join socket room
       socket.join(room);
 
+      // Check for pending requests for this user
+      await this.deliverPendingRequests(socket, userId);
+
       // Get all peers in the room
       const roomPeers = await redisService.getRoomPeers(room);
       
@@ -157,7 +160,7 @@ export class SocketService {
       const allPeers = await redisService.getAllPeers();
       const targetPeer = allPeers.find(p => p.id === to);
       
-      if (targetPeer && targetPeer.socketId) {
+      if (targetPeer && targetPeer.socketId && targetPeer.isOnline) {
         // Find the target peer's socket
         const targetSocket = this.peerSockets.get(targetPeer.socketId);
         
@@ -167,12 +170,63 @@ export class SocketService {
           console.log(`📡 Signal forwarded from ${from} to ${to} (socket: ${targetPeer.socketId})`);
         } else {
           console.warn(`⚠️ Target peer ${to} socket not found for signal from ${from}`);
+          await this.storePendingSignal(from, to, signalData);
         }
       } else {
-        console.warn(`⚠️ Target peer ${to} not found for signal from ${from}`);
+        // Target peer is offline, store the signal as pending request
+        console.log(`📦 Target peer ${to} is offline, storing signal as pending request`);
+        await this.storePendingSignal(from, to, signalData);
       }
     } catch (error) {
       console.error('❌ Error handling signal:', error);
+    }
+  }
+
+  private async storePendingSignal(from: string, to: string, signalData: any): Promise<void> {
+    const requestId = `signal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const request: PendingRequest = {
+      requestId,
+      senderId: from,
+      receiverId: to,
+      requestType: 'webrtc-signal',
+      data: signalData,
+      timestamp: Date.now(),
+      expiresAt: Date.now() + 300000 // 5 minutes
+    };
+
+    await redisService.storePendingRequest(request);
+  }
+
+  private async deliverPendingRequests(socket: Socket, userId: string): Promise<void> {
+    try {
+      const pendingRequests = await redisService.getReceiverPendingRequests(userId);
+      
+      if (pendingRequests.length > 0) {
+        console.log(`📦 Delivering ${pendingRequests.length} pending requests to ${userId}`);
+        
+        for (const request of pendingRequests) {
+          if (request.requestType === 'webrtc-signal') {
+            // Deliver WebRTC signal
+            socket.emit('signal', { 
+              from: request.senderId, 
+              data: request.data 
+            });
+            console.log(`📡 Delivered pending signal from ${request.senderId} to ${userId}`);
+          } else if (request.requestType === 'file-transfer') {
+            // Deliver file transfer request
+            socket.emit('file-transfer-request', {
+              from: request.senderId,
+              ...request.data
+            });
+            console.log(`📁 Delivered pending file transfer request from ${request.senderId} to ${userId}`);
+          }
+          
+          // Remove the delivered request
+          await redisService.removePendingRequest(request.requestId, userId);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error delivering pending requests:', error);
     }
   }
 
