@@ -30,7 +30,7 @@ import Confetti from 'react-confetti';
 const WORLD_OPTIONS = [
   { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open world - share with anyone globally' },
   { key: 'room', label: 'Room', icon: '🔒', desc: 'Private room - secure sharing with room code' },
-  { key: 'family', label: 'Family', icon: '📶', desc: 'WiFi family - same network sharing only' },
+  { key: 'family', label: 'Local Den', icon: '🏠', desc: 'Share with anyone on your WiFi (Local Den)' },
 ] as const;
 type WorldType = typeof WORLD_OPTIONS[number]['key'];
 
