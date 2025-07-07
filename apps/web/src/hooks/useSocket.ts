@@ -20,7 +20,12 @@ export const useSocket = () => {
   const [peers, setPeers] = useState<Peer[]>([]);
   const [currentRoom, setCurrentRoom] = useState<string | null>(null);
   const [publicIp, setPublicIp] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const joinedRoomsRef = useRef<Set<string>>(new Set()); // Track joined rooms per connection
+  const retryIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [connectionErrorReason, setConnectionErrorReason] = useState<string | null>(null);
 
   // Fetch public IP for Family world
   useEffect(() => {
@@ -40,10 +45,10 @@ export const useSocket = () => {
   }, []);
 
   useEffect(() => {
-    // Use VITE_WS_URL from env, fallback to VITE_CLIENT_URL, then ws://localhost:3001
-    const WS_URL = import.meta.env.VITE_WS_URL || import.meta.env.VITE_CLIENT_URL || 'ws://localhost:3001';
+    // Use VITE_WS_URL from env, fallback to VITE_CLIENT_URL, then ws://100.69.69.100:3001
+    const WS_URL = import.meta.env.VITE_WS_URL || import.meta.env.VITE_CLIENT_URL || 'ws://100.69.69.100:3001';
     socketRef.current = io(WS_URL, {
-      transports: ['websocket']
+      transports: ['websocket', 'polling']
     });
 
     const socket = socketRef.current;
@@ -51,15 +56,30 @@ export const useSocket = () => {
     socket.on('connect', () => {
       console.log('🔌 Socket connected');
       setIsConnected(true);
-      // Clear joined rooms on new connection
+      setConnectionError(null);
+      setRetrying(false);
+      setRetryCount(0);
       joinedRoomsRef.current.clear();
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+        retryIntervalRef.current = null;
+      }
     });
 
     socket.on('disconnect', () => {
       console.log('🔌 Socket disconnected');
       setIsConnected(false);
-      // Clear joined rooms on disconnect
       joinedRoomsRef.current.clear();
+    });
+
+    socket.on('connect_error', (err) => {
+      setConnectionError('Unable to connect to the server.');
+      setConnectionErrorReason(err?.message || String(err) || null);
+    });
+
+    socket.on('reconnect_failed', (err) => {
+      setConnectionError('Unable to reconnect to the server.');
+      setConnectionErrorReason(err?.message || String(err) || null);
     });
 
     socket.on('peers', (peerList: Peer[]) => {
@@ -91,8 +111,43 @@ export const useSocket = () => {
       setPeers(prev => prev.filter(p => p.id !== peerId));
     });
 
+    // Improved network change detection
+    const handleNetworkChange = () => {
+      if (!socket.connected) {
+        setRetrying(true);
+        setConnectionError('Network changed. Retrying connection...');
+        setRetryCount((c) => c + 1);
+        socket.connect();
+      }
+    };
+    window.addEventListener('online', handleNetworkChange);
+    window.addEventListener('offline', handleNetworkChange);
+    window.addEventListener('visibilitychange', handleNetworkChange);
+    if ((navigator as any).connection) {
+      (navigator as any).connection.addEventListener('change', handleNetworkChange);
+    }
+
+    // Periodic retry if disconnected
+    retryIntervalRef.current = setInterval(() => {
+      if (!socket.connected) {
+        setRetrying(true);
+        setConnectionError('Retrying connection...');
+        setRetryCount((c) => c + 1);
+        socket.connect();
+      }
+    }, 5000);
+
     return () => {
       socket.disconnect();
+      window.removeEventListener('online', handleNetworkChange);
+      window.removeEventListener('offline', handleNetworkChange);
+      window.removeEventListener('visibilitychange', handleNetworkChange);
+      if ((navigator as any).connection) {
+        (navigator as any).connection.removeEventListener('change', handleNetworkChange);
+      }
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+      }
     };
   }, []);
 
@@ -171,6 +226,10 @@ export const useSocket = () => {
     joinFamilyRoom,
     updateProfile,
     sendSignal,
-    onSignal
+    onSignal,
+    connectionError,
+    retrying,
+    retryCount,
+    connectionErrorReason,
   };
 };

@@ -36,4 +36,7 @@ export default defineConfig({
       external: [],
     },
   },
+  server: {
+    host: '0.0.0.0',
+  },
 });

@@ -13,7 +13,7 @@ import { generateRandomUsername } from '../utils/names';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
-import { Globe, Home, Users, Play } from 'lucide-react';
+import { Globe, Home, Users, Play, Wifi, Lock } from 'lucide-react';
 import { 
   trackWorldSelection, 
   trackRoomEvents, 
@@ -26,12 +26,11 @@ import { AnalyticsDebug } from '../components/AnalyticsDebug';
 import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
 import Confetti from 'react-confetti';
-import FamilyWifiWarningModal from '../components/FamilyWifiWarningModal';
 
 const WORLD_OPTIONS = [
-  { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open space, send to anyone' },
-  { key: 'room', label: 'Room', icon: '🏠', desc: 'Private group room' },
-  { key: 'family', label: 'Family', icon: '👨‍👩‍👧‍👦', desc: 'Same WiFi group' },
+  { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open space, send to anyone', subtitle: 'Global network - anyone can join' },
+  { key: 'room', label: 'Private Room', icon: '🔒', desc: 'Private group room', subtitle: 'Private room with invite code' },
+  { key: 'family', label: 'Family', icon: '📶', desc: 'Same WiFi group', subtitle: 'Same WiFi network only' },
 ] as const;
 type WorldType = typeof WORLD_OPTIONS[number]['key'];
 
@@ -57,7 +56,7 @@ export const AppPage: React.FC = () => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
-  const { isConnected, peers, currentRoom, publicIp, joinRoom, joinDefaultRoom, joinFamilyRoom, updateProfile, sendSignal, onSignal } = useSocket();
+  const { isConnected, peers, currentRoom, publicIp, joinRoom, joinDefaultRoom, joinFamilyRoom, updateProfile, sendSignal, onSignal, connectionError, retrying, retryCount, connectionErrorReason } = useSocket();
   const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id, addToast, peers);
 
   // Set up signal handling once
@@ -82,7 +81,6 @@ export const AppPage: React.FC = () => {
   const [pendingWorld, setPendingWorld] = useState<WorldType | null>(null);
   const [showDemo, setShowDemo] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [showFamilyWifiWarning, setShowFamilyWifiWarning] = useState(false);
 
   // Join default jungle room when connection is established
   useEffect(() => {
@@ -235,12 +233,6 @@ export const AppPage: React.FC = () => {
       setShowRoomModal(true);
       setPendingWorld(world);
     } else if (world === 'family') {
-      // Check network type using Network Information API
-      const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
-      if (connection && connection.type && connection.type !== 'wifi') {
-        setShowFamilyWifiWarning(true);
-        return;
-      }
       setShowFamilyNotice(true);
       setPendingWorld(world);
     } else {
@@ -293,10 +285,11 @@ export const AppPage: React.FC = () => {
         >
           <span className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/30 backdrop-blur-[10px] shadow-lg border border-white/30 mb-3">
             {opt.key === 'jungle' && <Globe size={36} style={{ color: '#A6521B' }} />}
-            {opt.key === 'room' && <Home size={36} style={{ color: '#A6521B' }} />}
-            {opt.key === 'family' && <Users size={36} style={{ color: '#A6521B' }} />}
+            {opt.key === 'room' && <Lock size={36} style={{ color: '#A6521B' }} />}
+            {opt.key === 'family' && <Wifi size={36} style={{ color: '#A6521B' }} />}
           </span>
           <span className="text-xl font-bold mb-1 tracking-tight" style={{ color: value === opt.key ? '#A6521B' : '#2C1B12' }}>{opt.label}</span>
+          <span className="text-sm text-center" style={{ color: value === opt.key ? '#A6521B' : '#2C1B12', opacity: 0.8 }}>{opt.subtitle}</span>
          
           {value === opt.key && (
             <span className="absolute -top-3 right-4 bg-orange-400 text-white text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">Selected</span>
@@ -386,17 +379,6 @@ const filteredPeers = React.useMemo(() => {
         )}
       </AnimatePresence>
 
-      {/* Family WiFi Warning Modal */}
-      <FamilyWifiWarningModal
-        isOpen={showFamilyWifiWarning}
-        onClose={() => setShowFamilyWifiWarning(false)}
-        onCreateRoom={() => {
-          setShowFamilyWifiWarning(false);
-          setShowRoomModal(true);
-          setPendingWorld('room');
-        }}
-      />
-
       {/* Navbar with animated logo */}
       <motion.header
         className="p-4 md:p-6 border-b relative"
@@ -446,7 +428,7 @@ const filteredPeers = React.useMemo(() => {
                 whileTap={{ scale: 0.95 }}
               >
                 <span className="text-sm md:text-lg">
-                  {selectedWorld === 'jungle' ? '🌍' : selectedWorld === 'room' ? '🏠' : '👨‍👩‍👧‍👦'}
+                  {selectedWorld === 'jungle' ? '🌍' : selectedWorld === 'room' ? '🔒' : '📶'}
                 </span>
                 <span className="text-xs md:text-sm font-medium capitalize hidden sm:inline" style={{ color: '#A6521B' }}>
                   {selectedWorld}
@@ -492,7 +474,7 @@ const filteredPeers = React.useMemo(() => {
                   selectedWorld === 'jungle' 
                     ? "Search by name or user ID..." 
                     : selectedWorld === 'room'
-                    ? "Search room members..."
+                    ? "Search private room members..."
                     : "Search family members..."
                 }
                 className="w-full max-w-md px-4 py-2 rounded-xl border border-orange-200 bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-lg"
@@ -686,6 +668,38 @@ const filteredPeers = React.useMemo(() => {
       
       {/* Demo Modal */}
       <DemoModal isOpen={showDemo} onClose={() => setShowDemo(false)} />
+
+      {connectionError && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-[8px]">
+          <div className="w-full max-w-md mx-4 z-10">
+            <div className="pt-10 pb-8 px-6 min-h-[260px] relative flex flex-col items-center rounded-3xl shadow-2xl bg-white border-2 border-orange-200 backdrop-blur-[16px]">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-orange-100/60 border-2 border-orange-200 shadow-lg">
+                <svg className="animate-spin h-10 w-10 text-orange-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+              </div>
+              <h2 className="text-2xl font-extrabold mb-2 text-orange-700 text-center drop-shadow">Network Issue</h2>
+              <p className="mb-2 text-center text-orange-900/90 text-base font-medium">
+                {connectionError}
+              </p>
+              {connectionErrorReason && (
+                <p className="mb-2 text-center text-orange-700/80 text-xs italic max-w-xs break-words">
+                  <span className="font-semibold">Reason:</span> {connectionErrorReason}
+                </p>
+              )}
+              {retrying && (
+                <div className="flex flex-col items-center gap-1 mb-2">
+                  <span className="text-orange-700 font-semibold text-lg">Retrying connection <span className="font-mono">(attempt {retryCount})</span>...</span>
+                  <span className="text-xs text-orange-800/80">Please check your WiFi, VPN, or firewall settings.</span>
+                </div>
+              )}
+              {!retrying && (
+                <button onClick={() => window.location.reload()} className="mt-4 px-6 py-2 rounded-xl bg-orange-400 text-white font-bold shadow focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all hover:scale-105">
+                  Reload Page
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { AlertTriangle, Shield, Users, Home, Globe } from 'lucide-react';
+import { AlertTriangle, Shield, Users, Home, Globe, Wifi, Smartphone, Lock } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 
 interface FamilyPrivacyNoticeProps {
@@ -9,6 +9,25 @@ interface FamilyPrivacyNoticeProps {
 }
 
 export const FamilyPrivacyNotice: React.FC<FamilyPrivacyNoticeProps> = ({ onAccept, onCreateRoom }) => {
+  const [isOnMobileData, setIsOnMobileData] = useState(false);
+
+  useEffect(() => {
+    // Check if user is on mobile data using Network Information API
+    const checkNetworkType = () => {
+      const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+      if (connection && connection.type) {
+        // If not on WiFi, assume mobile data
+        setIsOnMobileData(connection.type !== 'wifi');
+      } else {
+        // Fallback: check if on mobile device
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        setIsOnMobileData(isMobile);
+      }
+    };
+
+    checkNetworkType();
+  }, []);
+
   return (
     <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[8px]"
@@ -27,46 +46,72 @@ export const FamilyPrivacyNotice: React.FC<FamilyPrivacyNoticeProps> = ({ onAcce
           {/* Header */}
           <div className="text-center mb-6">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255, 193, 7, 0.1)' }}>
-              <AlertTriangle size={24} style={{ color: '#FF6B35' }} />
+              <Wifi size={24} style={{ color: '#FF6B35' }} />
             </div>
             <h2 className="text-2xl font-bold mb-2" style={{ color: '#2C1B12' }}>
-              Family Network Privacy Notice
+              Family WiFi Network
             </h2>
             <p className="text-sm" style={{ color: '#A6521B' }}>
-              You're about to join a network with other devices on your WiFi
+              Everyone on your WiFi network using c0py.me will be in this room
             </p>
           </div>
 
           {/* Warning content */}
           <div className="space-y-4 mb-6">
-            <div className="p-4 rounded-lg border-2 border-yellow-200" style={{ backgroundColor: 'rgba(255, 193, 7, 0.05)' }}>
-              <div className="flex items-start gap-3">
-                <Shield size={20} style={{ color: '#FF6B35', marginTop: '2px' }} />
+            <div className="p-3 rounded-lg border-2 border-orange-300" style={{ backgroundColor: 'rgba(255, 193, 7, 0.1)' }}>
+              <div className="flex items-start gap-2">
+                <Wifi size={18} style={{ color: '#FF6B35', marginTop: '2px' }} />
                 <div>
-                  <h3 className="font-semibold mb-2" style={{ color: '#2C1B12' }}>
-                    ⚠️ Stranger Cubs Alert
+                  <h3 className="font-semibold mb-1" style={{ color: '#2C1B12' }}>
+                    WiFi Network Sharing
                   </h3>
-                  <p className="text-sm leading-relaxed" style={{ color: '#2C1B12', opacity: 0.8 }}>
-                    Other devices on your WiFi network can join this family room. 
-                    <strong> You may not know all the users in this network.</strong>
+                  <p className="text-xs" style={{ color: '#2C1B12', opacity: 0.85 }}>
+                    Everyone on your WiFi using c0py.me will join this Family room.
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="p-4 rounded-lg" style={{ backgroundColor: 'rgba(166, 82, 27, 0.05)' }}>
-              <div className="flex items-start gap-3">
-                <Users size={20} style={{ color: '#A6521B', marginTop: '2px' }} />
+            {isOnMobileData && (
+              <div className="p-3 rounded-lg border-2 border-red-300" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>
+                <div className="flex items-start gap-2">
+                  <Smartphone size={18} style={{ color: '#EF4444', marginTop: '2px' }} />
+                  <div>
+                    <h3 className="font-semibold mb-1" style={{ color: '#2C1B12' }}>
+                      Mobile Data Detected
+                    </h3>
+                    <p className="text-xs" style={{ color: '#2C1B12', opacity: 0.85 }}>
+                      Family mode only works on WiFi. You're on mobile data—use Private Room or Jungle instead.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="p-3 rounded-lg border-2 border-yellow-200" style={{ backgroundColor: 'rgba(255, 193, 7, 0.05)' }}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={18} style={{ color: '#FF6B35', marginTop: '2px' }} />
                 <div>
-                  <h3 className="font-semibold mb-2" style={{ color: '#2C1B12' }}>
-                    🦁 Safe Sharing Guidelines
+                  <h3 className="font-semibold mb-1" style={{ color: '#2C1B12' }}>
+                    Stranger Cubs Alert
                   </h3>
-                  <ul className="text-sm space-y-1" style={{ color: '#2C1B12', opacity: 0.8 }}>
-                    <li>• Only share files with people you know and trust</li>
-                    <li>• Avoid sending sensitive or personal information</li>
-                    <li>• Be cautious of unknown users in the network</li>
-                    <li>• Files are transferred directly between devices</li>
-                  </ul>
+                  <p className="text-xs" style={{ color: '#2C1B12', opacity: 0.85 }}>
+                    Anyone on your WiFi can join. You may not know all users.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg" style={{ backgroundColor: 'rgba(166, 82, 27, 0.05)' }}>
+              <div className="flex items-start gap-2">
+                <Users size={18} style={{ color: '#A6521B', marginTop: '2px' }} />
+                <div>
+                  <h3 className="font-semibold mb-1" style={{ color: '#2C1B12' }}>
+                    Safe Sharing Guidelines
+                  </h3>
+                  <p className="text-xs" style={{ color: '#2C1B12', opacity: 0.85 }}>
+                    Only share files with people you trust.
+                  </p>
                 </div>
               </div>
             </div>
@@ -81,9 +126,9 @@ export const FamilyPrivacyNotice: React.FC<FamilyPrivacyNoticeProps> = ({ onAcce
               whileTap={{ scale: 0.98 }}
             >
               <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/30 backdrop-blur-[6px] mr-2 shadow border border-white/30">
-                <Home size={18} style={{ color: '#A6521B' }} />
+                <Lock size={18} style={{ color: '#A6521B' }} />
               </span>
-              Join Private Room
+              Create Private Room
             </motion.button>
             <motion.button
               onClick={onAccept}
