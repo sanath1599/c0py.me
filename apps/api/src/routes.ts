@@ -100,4 +100,67 @@ router.post('/cleanup', (req: Request, res: Response) => {
     });
 });
 
+// Fallback endpoints for network detection
+router.post('/fallback/ping', (req: Request, res: Response) => {
+  const { sessionId, timestamp } = req.body;
+  
+  if (!sessionId) {
+    res.status(400).json({ error: 'Session ID required' });
+    return;
+  }
+
+  const latency = Date.now() - (timestamp || Date.now());
+  
+  res.status(200).json({
+    pong: true,
+    sessionId,
+    latency,
+    timestamp: Date.now(),
+  });
+});
+
+router.get('/fallback/poll', (req: Request, res: Response) => {
+  const { sessionId } = req.query;
+  
+  if (!sessionId) {
+    res.status(400).json({ error: 'Session ID required' });
+    return;
+  }
+
+  // For now, return empty messages
+  // In a real implementation, this would check for pending messages for the session
+  res.status(200).json({
+    sessionId,
+    messages: [],
+    timestamp: Date.now(),
+  });
+});
+
+router.post('/fallback/messages', (req: Request, res: Response) => {
+  const { sessionId, messages } = req.body;
+  
+  if (!sessionId || !Array.isArray(messages)) {
+    res.status(400).json({ error: 'Session ID and messages array required' });
+    return;
+  }
+
+  // For now, just acknowledge receipt
+  // In a real implementation, this would process and route messages
+  res.status(200).json({
+    received: messages.length,
+    sessionId,
+    timestamp: Date.now(),
+  });
+});
+
+// Connection statistics endpoint
+router.get('/stats/connections', (req: Request, res: Response) => {
+  // This endpoint can be enhanced later to include socket service stats
+  res.json({
+    message: 'Connection stats endpoint ready',
+    timestamp: new Date().toISOString(),
+    note: 'Socket service stats will be added in future update'
+  });
+});
+
 export default router; 

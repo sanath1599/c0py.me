@@ -14,8 +14,16 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write src/**/*.ts"
   },
-  "keywords": ["webrtc", "file-sharing", "socket.io", "signaling"],
+  "keywords": [
+    "webrtc",
+    "file-sharing",
+    "socket.io",
+    "signaling"
+  ],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.12.4"
-} 
+  "packageManager": "pnpm@10.12.4",
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}

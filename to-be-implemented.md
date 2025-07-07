@@ -6,28 +6,46 @@ This file tracks features that have been requested but not yet implemented. Feat
 
 ---
 
-## Feature: AppPage Socket Connection Error Handling with Retry Logic
+## Feature: World/Room Selection Persistence and Restoration
 
-**Description**: Enhance the AppPage component to handle socket connection errors gracefully with automatic retry logic and user-friendly error messages.
+**Description**: Implement a system to remember and restore the user's room/world selection across sessions, including room history, visit counts, and seamless restoration on app reload.
 
 **Planned Implementation Overview**:
-- Add retry mechanism for socket connection failures
-- Implement exponential backoff for retry attempts
-- Add user-friendly error messages and loading states
-- Handle different types of connection errors (network, server, timeout)
-- Add connection status indicators
-- Implement graceful degradation when socket is unavailable
+- Create world persistence hook using localStorage and sessionStorage
+- Implement room history tracking with visit counts and timestamps
+- Add automatic restoration of world/room selection on app load
+- Integrate with existing world switcher and room modal
+- Show recent rooms in room selection modal
+- Display visit statistics in UI
+- Handle session restoration for page reloads
 
 **Dependencies**: 
-- Socket.IO client setup
-- Existing AppPage component
+- Existing world selection system
+- Room modal component
+- AppPage component
+- Socket connection management
 
 **User Input / Notes**:
-- Should handle various connection failure scenarios
-- Provide clear feedback to users about connection status
-- Implement smart retry logic to avoid overwhelming the server
+- Should remember the last selected world and room
+- Track room visit history with timestamps
+- Show recent rooms for quick access
+- Restore state seamlessly on app reload
+- Display visit counts and statistics
+- Integrate with existing UI components
 
-**Status**: pending
+**Status**: completed
+
+**Implementation Details**:
+- Created `useWorldPersistence` hook with localStorage and sessionStorage integration
+- Implemented world state tracking (selected world, current room, visit count, last visited)
+- Added room history tracking with visit counts and timestamps
+- Integrated automatic restoration on app load with session fallback
+- Updated `RoomModal` to display recent rooms for quick access
+- Enhanced world indicator in navbar to show visit statistics
+- Added seamless room restoration when connection is established
+- Implemented session restore for page reloads and network recovery
+- Added room history management with automatic cleanup (keep last 10 rooms)
+- Integrated with existing world selection and room joining workflows
 
 ---
 

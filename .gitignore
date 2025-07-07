@@ -156,3 +156,7 @@ apps/api/.env.prod
 .turbo/cache/27bc6fbcb627a4d4-meta.json
 .turbo/cache/27bc6fbcb627a4d4.tar.zst
 pnpm-lock.yaml
+
+test-*.js
+*lock.*
+package-lock.json
