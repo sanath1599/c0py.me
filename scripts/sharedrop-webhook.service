@@ -1,0 +1,31 @@
+[Unit]
+Description=ShareDrop Webhook Handler
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root
+ExecStart=/usr/bin/node /root/sharedrop/scripts/webhook-handler.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=WEBHOOK_PORT=3002
+Environment=WEBHOOK_SECRET=your-webhook-secret-here
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log /root
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sharedrop-webhook
+
+[Install]
+WantedBy=multi-user.target 

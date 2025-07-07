@@ -1,0 +1,87 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    name: Deploy Backend Service
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: |
+        npm install -g pnpm
+        pnpm install
+        
+    - name: Run tests
+      run: |
+        pnpm test
+        
+    - name: Build project
+      run: |
+        pnpm build
+        
+    - name: Deploy to backend.c0py.me
+      run: |
+        # Trigger webhook for backend deployment
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -H "X-GitHub-Event: push" \
+          -H "X-GitHub-Delivery: ${{ github.run_id }}" \
+          -H "User-Agent: GitHub-Hookshot/$(openssl rand -hex 8)" \
+          -d '{
+            "ref": "refs/heads/main",
+            "repository": {
+              "name": "sharedrop",
+              "full_name": "${{ github.repository }}",
+              "clone_url": "${{ github.server_url }}/${{ github.repository }}.git"
+            },
+            "commits": [{
+              "id": "${{ github.sha }}",
+              "message": "${{ github.event.head_commit.message }}",
+              "author": {
+                "name": "${{ github.actor }}"
+              }
+            }]
+          }' \
+          https://backend.c0py.me/webhook/deploy
+          
+    - name: Wait for deployment
+      run: |
+        echo "Waiting for deployment to complete..."
+        sleep 30
+        
+    - name: Health check
+      run: |
+        # Wait for service to be ready
+        for i in {1..10}; do
+          if curl -f https://backend.c0py.me/api/health; then
+            echo "✅ Backend service is healthy"
+            break
+          else
+            echo "⏳ Waiting for service to be ready... (attempt $i/10)"
+            sleep 10
+          fi
+        done
+        
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "🎉 Deployment completed successfully!"
+        else
+          echo "❌ Deployment failed!"
+          exit 1
+        fi 
