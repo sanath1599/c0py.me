@@ -14,14 +14,7 @@ import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
 import { Globe, Lock, Wifi, Play, FileText } from 'lucide-react';
-import { 
-  trackWorldSelection, 
-  trackRoomEvents, 
-  trackFileTransfer, 
-  trackUserInteraction,
-  trackError,
-  trackPrivacyEvents 
-} from '../utils/analytics';
+import { logUserAction, logSystemEvent } from '../utils/eventLogger';
 
 import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
@@ -132,13 +125,17 @@ export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
 
   const handlePeerClick = (peer: Peer) => {
     setSelectedPeer(peer);
-    trackUserInteraction.peerSelected();
+    logUserAction.peerSelected(peer.id, peer.name);
   };
 
   const handleSendFiles = async (files: File[], peer: Peer) => {
     try {
-      // Track file transfer started
-      trackFileTransfer.started(files.length, selectedWorld || 'unknown');
+      // Calculate total size
+      const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+      const fileTypes = [...new Set(files.map(file => file.type))];
+      
+      // Log transfer initiation
+      logUserAction.transferInitiated(peer.id, files.length, totalSize);
       
       // Send each file individually
       for (const file of files) {
@@ -149,7 +146,7 @@ export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
     } catch (error) {
       console.error('Failed to send files:', error);
       addToast('error', `Failed to send files to ${peer.name}`);
-      trackError('file_transfer', `Failed to send files to ${peer.name}`);
+      logSystemEvent.error('file_transfer', `Failed to send files to ${peer.name}`, { peerId: peer.id, fileCount: files.length });
     }
   };
 
@@ -199,13 +196,16 @@ export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
 
   const handleFilesSelected = (files: File[]) => {
     setSelectedFiles(prev => [...prev, ...files]);
-    trackUserInteraction.fileSelected(files.length);
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    const fileTypes = [...new Set(files.map(file => file.type))];
+    logUserAction.filesSelected(files.length, totalSize, fileTypes);
   };
 
   const handleProfileUpdate = (profile: { name: string; emoji: string; color: string }) => {
+    const oldName = currentUser.name;
     setCurrentUser(prev => ({ ...prev, ...profile }));
     updateProfile(profile.name, profile.color, profile.emoji);
-    trackUserInteraction.profileUpdated();
+    logUserAction.profileUpdated('name', oldName, profile.name);
   };
 
   const ZipPreview: React.FC<{ file: File }> = ({ file }) => {
@@ -252,14 +252,8 @@ export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
   };
 
   const handleWorldSelect = (world: WorldType) => {
-    // Track world selection
-    if (world === 'jungle') {
-      trackWorldSelection.jungle();
-    } else if (world === 'room') {
-      trackWorldSelection.room();
-    } else if (world === 'family') {
-      trackWorldSelection.family();
-    }
+    // Log world selection
+    logUserAction.worldSelected(world);
 
     if (world === 'room') {
       setShowRoomModal(true);
@@ -278,7 +272,7 @@ export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
       joinRoom(roomId, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
       setSelectedWorld('room');
       setPendingWorld(null);
-      trackRoomEvents.joined(roomId);
+      logUserAction.roomJoined(roomId, 'room');
     }
   };
 
@@ -532,7 +526,7 @@ const filteredPeers = React.useMemo(() => {
                 onChange={e => {
                   setSearchQuery(e.target.value);
                   if (e.target.value.length > 0) {
-                    trackUserInteraction.searchUsed();
+                    logUserAction.peerSelected('search', 'search_query');
                   }
                 }}
                 placeholder={

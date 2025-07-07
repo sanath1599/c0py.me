@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { FileTransfer, Peer } from '../types';
 import { formatFileSize } from '../utils/format';
 import { playChime, playSuccessSound } from '../utils/sound';
-import { trackPrivacyEvents, trackFileTransfer, trackError } from '../utils/analytics';
+import { logSystemEvent } from '../utils/eventLogger';
 
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -290,7 +290,7 @@ export const useWebRTC = (
           ));
           
           // Track successful file transfer
-          trackFileTransfer.completed(file.size, 'unknown');
+          logSystemEvent.transferCompleted(transferId, Date.now() - startTime, file.size, 0);
           
           // Close data channel after a delay
           setTimeout(() => {
@@ -307,7 +307,7 @@ export const useWebRTC = (
       setTransfers(prev => prev.map(t => 
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
-      trackFileTransfer.failed('unknown');
+              logSystemEvent.transferFailed(transferId, 'transfer_failed', Date.now() - startTime);
     };
 
     readSlice();
@@ -449,7 +449,7 @@ export const useWebRTC = (
                     ));
                     
                     // Track file received
-                    trackPrivacyEvents.fileReceived(receivedFile.type);
+                    logSystemEvent.fileReceived(receivedFile.type, receivedFile.size);
                     
                     // Play success sound
                     playSuccessSound();

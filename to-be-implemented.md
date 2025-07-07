@@ -102,7 +102,10 @@ This file tracks features that have been requested but not yet implemented. Feat
 - Logger utility implemented in `src/utils/eventLogger.ts`
 - In-memory buffer, scheduled flush, and error handling in place
 - Unit tests for core logger and error handling pass
-- Some tests for convenience functions are flaky due to async flush; to be reviewed later
+- **Performance Optimization**: Refactored to focus only on meaningful events with consistent format
+- **New Event Categories**: user_action (navigation, interaction, file_operation, profile) and system_event (connection, webrtc, transfer, api, error, performance)
+- **Consistent Format**: All events now follow structured format with categories and relevant metadata
+- **Reduced Verbosity**: Removed excessive logging, focusing on user actions and important system events
 
 ---
 

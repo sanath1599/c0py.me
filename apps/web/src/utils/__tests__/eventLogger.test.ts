@@ -1,4 +1,4 @@
-import { logEvent, flushEvents, clearEvents, logUserInteraction } from '../eventLogger';
+import { logEvent, flushEvents, clearEvents, logUserAction, logSystemEvent } from '../eventLogger';
 import { EventEntry } from '../../types';
 
 // Mock localStorage
@@ -123,73 +123,123 @@ describe('EventLogger', () => {
     });
   });
 
-  describe('logUserInteraction', () => {
-    it('should log click events', async () => {
-      logUserInteraction.click('test-button', { additional: 'data' });
+  describe('logUserAction', () => {
+    it('should log world selection events', async () => {
+      logUserAction.worldSelected('jungle', 'room-123');
       await waitForFlush();
       expect(localStorageMock.setItem).toHaveBeenCalled();
       const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
       expect(storedData[0]).toMatchObject({
-        type: 'click',
-        details: { elementId: 'test-button', additional: 'data' },
+        type: 'user_action',
+        details: { 
+          action: 'world_selected',
+          world: 'jungle',
+          roomId: 'room-123',
+          category: 'navigation'
+        },
       });
     });
 
-    it('should log navigation events', async () => {
-      logUserInteraction.navigation('/test-page', '/home');
+    it('should log file selection events', async () => {
+      logUserAction.filesSelected(3, 1024000, ['image/jpeg', 'text/plain']);
       await waitForFlush();
       expect(localStorageMock.setItem).toHaveBeenCalled();
       const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
       expect(storedData[0]).toMatchObject({
-        type: 'navigation',
-        details: { to: '/test-page', from: '/home' },
+        type: 'user_action',
+        details: { 
+          action: 'files_selected',
+          fileCount: 3,
+          totalSize: 1024000,
+          fileTypes: ['image/jpeg', 'text/plain'],
+          category: 'file_operation'
+        },
       });
     });
 
-    it('should log form submit events', async () => {
-      logUserInteraction.formSubmit('test-form', { field1: 'value1' });
+    it('should log transfer initiation events', async () => {
+      logUserAction.transferInitiated('peer-123', 2, 2048000);
       await waitForFlush();
       expect(localStorageMock.setItem).toHaveBeenCalled();
       const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
       expect(storedData[0]).toMatchObject({
-        type: 'form_submit',
-        details: { formId: 'test-form', formData: { field1: 'value1' } },
+        type: 'user_action',
+        details: { 
+          action: 'transfer_initiated',
+          peerId: 'peer-123',
+          fileCount: 2,
+          totalSize: 2048000,
+          category: 'file_operation'
+        },
+      });
+    });
+  });
+
+  describe('logSystemEvent', () => {
+    it('should log socket connection events', async () => {
+      logSystemEvent.socketConnected('websocket', 50);
+      await waitForFlush();
+      expect(localStorageMock.setItem).toHaveBeenCalled();
+      const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+      expect(storedData[0]).toMatchObject({
+        type: 'system_event',
+        details: { 
+          event: 'socket_connected',
+          connectionMode: 'websocket',
+          latency: 50,
+          category: 'connection'
+        },
       });
     });
 
-    it('should log file action events', async () => {
-      logUserInteraction.fileAction('upload', { fileName: 'test.txt', size: 1024 });
+    it('should log WebRTC events', async () => {
+      logSystemEvent.webrtcConnectionEstablished('peer-123', 'transfer-456', 100);
       await waitForFlush();
       expect(localStorageMock.setItem).toHaveBeenCalled();
       const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
       expect(storedData[0]).toMatchObject({
-        type: 'file_action',
-        details: { action: 'upload', fileName: 'test.txt', size: 1024 },
+        type: 'system_event',
+        details: { 
+          event: 'webrtc_connection_established',
+          peerId: 'peer-123',
+          transferId: 'transfer-456',
+          latency: 100,
+          category: 'webrtc'
+        },
       });
     });
 
-    it('should log peer action events', async () => {
-      logUserInteraction.peerAction('connect', { peerId: 'peer-1', name: 'Test Peer' });
+    it('should log transfer completion events', async () => {
+      logSystemEvent.transferCompleted('transfer-123', 5000, 1024000, 204800);
       await waitForFlush();
       expect(localStorageMock.setItem).toHaveBeenCalled();
       const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
       expect(storedData[0]).toMatchObject({
-        type: 'peer_action',
-        details: { action: 'connect', peerId: 'peer-1', name: 'Test Peer' },
+        type: 'system_event',
+        details: { 
+          event: 'transfer_completed',
+          transferId: 'transfer-123',
+          duration: 5000,
+          totalSize: 1024000,
+          averageSpeed: 204800,
+          category: 'transfer'
+        },
       });
     });
 
     it('should log error events', async () => {
-      logUserInteraction.error('NetworkError', 'Connection failed', { context: 'test' });
+      logSystemEvent.error('NetworkError', 'Connection failed', { context: 'test' });
       await waitForFlush();
       expect(localStorageMock.setItem).toHaveBeenCalled();
       const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
       expect(storedData[0]).toMatchObject({
-        type: 'error',
+        type: 'system_event',
         details: { 
+          event: 'error',
           errorType: 'NetworkError', 
           errorMessage: 'Connection failed',
-          context: 'test'
+          context: { context: 'test' },
+          category: 'error'
         },
       });
     });

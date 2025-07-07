@@ -66,29 +66,217 @@ export function clearEvents() {
   }
 }
 
-// Convenience functions for common event types
-export const logUserInteraction = {
-  click: (elementId: string, additionalDetails?: Record<string, any>) => {
-    logEvent('click', { elementId, ...additionalDetails });
+// Meaningful event logging with consistent format
+export const logUserAction = {
+  // User interface interactions
+  worldSelected: (world: string, roomId?: string) => {
+    logEvent('user_action', { 
+      action: 'world_selected',
+      world,
+      roomId,
+      category: 'navigation'
+    });
   },
   
-  navigation: (to: string, from?: string) => {
-    logEvent('navigation', { to, from });
+  roomJoined: (roomId: string, world: string) => {
+    logEvent('user_action', { 
+      action: 'room_joined',
+      roomId,
+      world,
+      category: 'navigation'
+    });
   },
   
-  formSubmit: (formId: string, formData?: Record<string, any>) => {
-    logEvent('form_submit', { formId, formData });
+  roomCreated: (roomId: string, world: string) => {
+    logEvent('user_action', { 
+      action: 'room_created',
+      roomId,
+      world,
+      category: 'navigation'
+    });
   },
   
-  fileAction: (action: string, fileInfo?: Record<string, any>) => {
-    logEvent('file_action', { action, ...fileInfo });
+  roomCodeCopied: (roomId: string) => {
+    logEvent('user_action', { 
+      action: 'room_code_copied',
+      roomId,
+      category: 'navigation'
+    });
   },
   
-  peerAction: (action: string, peerInfo?: Record<string, any>) => {
-    logEvent('peer_action', { action, ...peerInfo });
+  peerSelected: (peerId: string, peerName: string) => {
+    logEvent('user_action', { 
+      action: 'peer_selected',
+      peerId,
+      peerName,
+      category: 'interaction'
+    });
   },
   
+  filesSelected: (fileCount: number, totalSize: number, fileTypes: string[]) => {
+    logEvent('user_action', { 
+      action: 'files_selected',
+      fileCount,
+      totalSize,
+      fileTypes,
+      category: 'file_operation'
+    });
+  },
+  
+  transferInitiated: (peerId: string, fileCount: number, totalSize: number) => {
+    logEvent('user_action', { 
+      action: 'transfer_initiated',
+      peerId,
+      fileCount,
+      totalSize,
+      category: 'file_operation'
+    });
+  },
+  
+  transferCancelled: (transferId: string, reason?: string) => {
+    logEvent('user_action', { 
+      action: 'transfer_cancelled',
+      transferId,
+      reason,
+      category: 'file_operation'
+    });
+  },
+  
+  profileUpdated: (field: string, oldValue: string, newValue: string) => {
+    logEvent('user_action', { 
+      action: 'profile_updated',
+      field,
+      oldValue,
+      newValue,
+      category: 'profile'
+    });
+  }
+};
+
+export const logSystemEvent = {
+  // Socket connection events
+  socketConnected: (connectionMode: string, latency?: number) => {
+    logEvent('system_event', { 
+      event: 'socket_connected',
+      connectionMode,
+      latency,
+      category: 'connection'
+    });
+  },
+  
+  socketDisconnected: (reason: string, duration: number) => {
+    logEvent('system_event', { 
+      event: 'socket_disconnected',
+      reason,
+      duration,
+      category: 'connection'
+    });
+  },
+  
+  // WebRTC events
+  webrtcOfferSent: (peerId: string, transferId: string) => {
+    logEvent('system_event', { 
+      event: 'webrtc_offer_sent',
+      peerId,
+      transferId,
+      category: 'webrtc'
+    });
+  },
+  
+  webrtcAnswerReceived: (peerId: string, transferId: string) => {
+    logEvent('system_event', { 
+      event: 'webrtc_answer_received',
+      peerId,
+      transferId,
+      category: 'webrtc'
+    });
+  },
+  
+  webrtcConnectionEstablished: (peerId: string, transferId: string, latency: number) => {
+    logEvent('system_event', { 
+      event: 'webrtc_connection_established',
+      peerId,
+      transferId,
+      latency,
+      category: 'webrtc'
+    });
+  },
+  
+  webrtcConnectionFailed: (peerId: string, transferId: string, reason: string) => {
+    logEvent('system_event', { 
+      event: 'webrtc_connection_failed',
+      peerId,
+      transferId,
+      reason,
+      category: 'webrtc'
+    });
+  },
+  
+  // File transfer progress
+  transferProgress: (transferId: string, progress: number, speed: number, timeRemaining: number) => {
+    logEvent('system_event', { 
+      event: 'transfer_progress',
+      transferId,
+      progress,
+      speed,
+      timeRemaining,
+      category: 'transfer'
+    });
+  },
+  
+  transferCompleted: (transferId: string, duration: number, totalSize: number, averageSpeed: number) => {
+    logEvent('system_event', { 
+      event: 'transfer_completed',
+      transferId,
+      duration,
+      totalSize,
+      averageSpeed,
+      category: 'transfer'
+    });
+  },
+  
+  transferFailed: (transferId: string, reason: string, duration: number) => {
+    logEvent('system_event', { 
+      event: 'transfer_failed',
+      transferId,
+      reason,
+      duration,
+      category: 'transfer'
+    });
+  },
+  
+  // API calls
+  apiCall: (endpoint: string, method: string, status: number, duration: number) => {
+    logEvent('system_event', { 
+      event: 'api_call',
+      endpoint,
+      method,
+      status,
+      duration,
+      category: 'api'
+    });
+  },
+  
+  // Error events
   error: (errorType: string, errorMessage: string, context?: Record<string, any>) => {
-    logEvent('error', { errorType, errorMessage, ...context });
+    logEvent('system_event', { 
+      event: 'error',
+      errorType,
+      errorMessage,
+      context,
+      category: 'error'
+    });
+  },
+  
+
+  
+  // File events
+  fileReceived: (fileType: string, fileSize: number) => {
+    logEvent('system_event', { 
+      event: 'file_received',
+      fileType,
+      fileSize,
+      category: 'transfer'
+    });
   }
 }; 

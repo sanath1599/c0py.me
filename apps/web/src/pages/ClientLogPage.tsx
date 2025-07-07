@@ -206,10 +206,10 @@ export const ClientLogPage: React.FC<ClientLogPageProps> = ({ onBack }) => {
             <div>
               <h3 className="font-medium text-gray-700 mb-2">Event Types</h3>
               <div className="space-y-1 text-gray-600">
-                <div>• <span className="bg-blue-100 text-blue-800 px-1 rounded text-xs">click</span> - Button clicks and interactions</div>
-                <div>• <span className="bg-green-100 text-green-800 px-1 rounded text-xs">navigation</span> - Page navigation</div>
-                <div>• <span className="bg-orange-100 text-orange-800 px-1 rounded text-xs">file_action</span> - File operations</div>
-                <div>• <span className="bg-red-100 text-red-800 px-1 rounded text-xs">error</span> - Error events</div>
+                <div>• <span className="bg-blue-100 text-blue-800 px-1 rounded text-xs">user_action</span> - User interactions and decisions</div>
+                <div>• <span className="bg-indigo-100 text-indigo-800 px-1 rounded text-xs">system_event</span> - System operations and API calls</div>
+                <div>• <span className="bg-cyan-100 text-cyan-800 px-1 rounded text-xs">webrtc</span> - WebRTC connection events</div>
+                <div>• <span className="bg-emerald-100 text-emerald-800 px-1 rounded text-xs">transfer</span> - File transfer progress</div>
               </div>
             </div>
             <div>
