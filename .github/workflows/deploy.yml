@@ -19,7 +19,7 @@ jobs:
         # Create JSON payload with proper escaping
         COMMIT_MESSAGE=$(echo '${{ github.event.head_commit.message }}' | jq -Rs .)
         
-        # Trigger webhook for backend deployment
+        # Trigger webhook for backend deployment (signature verification disabled)
         curl -X POST \
           -H "Content-Type: application/json" \
           -H "X-GitHub-Event: push" \

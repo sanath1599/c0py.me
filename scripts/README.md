@@ -2,7 +2,7 @@
 
 This directory contains the CI/CD pipeline components for ShareDrop, including GitHub Actions workflow and webhook handler for automatic deployment.
 
-**Last Updated**: 2025-07-07 07:35 UTC - Testing webhook deployment
+**Last Updated**: 2025-07-07 07:42 UTC - Testing webhook deployment (signature disabled)
 
 ## 🏗️ Architecture
 
