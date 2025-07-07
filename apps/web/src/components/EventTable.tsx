@@ -1,6 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EventEntry } from '../types';
+import { formatTimestamp } from '../utils/formatTimestamp';
+import { uploadLogsToBackend } from '../utils/eventLogger';
+import { UploadedLogsViewer } from './UploadedLogsViewer';
 import { GlassCard } from './GlassCard';
 import { 
   ChevronDown, 
@@ -57,6 +60,8 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
   const [sortBy, setSortBy] = useState<'timestamp' | 'type' | 'category'>('timestamp');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showFilters, setShowFilters] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [showUploadedLogs, setShowUploadedLogs] = useState(false);
 
   // Extract available filter options from events
   const filterOptions = useMemo(() => {
@@ -194,18 +199,24 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
     });
   };
 
-  const formatTimestamp = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
-    });
+  const handleUploadLogs = async () => {
+    try {
+      setUploading(true);
+      const result = await uploadLogsToBackend();
+      
+      if (result.success) {
+        alert(`Logs uploaded successfully! Log ID: ${result.logId}`);
+      } else {
+        alert(`Failed to upload logs: ${result.error}`);
+      }
+    } catch (error) {
+      alert('Failed to upload logs');
+    } finally {
+      setUploading(false);
+    }
   };
+
+
 
   const getEventTypeColor = (type: string, details: any) => {
     if (type === 'user_action') {
@@ -380,6 +391,35 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
                   <BarChart3 className="w-4 h-4" />
                   <span>{filteredEvents.length} of {events.length}</span>
                 </span>
+              </div>
+              
+              {/* Upload Actions */}
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleUploadLogs}
+                  disabled={uploading || events.length === 0}
+                  className="px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-1"
+                >
+                  {uploading ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      <span>Uploading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-3 h-3" />
+                      <span>Upload to Backend</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => setShowUploadedLogs(true)}
+                  className="px-3 py-2 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-1"
+                >
+                  <Eye className="w-3 h-3" />
+                  <span>View Uploaded</span>
+                </button>
               </div>
               
               {/* Clear Actions */}
@@ -672,6 +712,11 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
           </table>
         </div>
       </GlassCard>
+      
+      {/* Uploaded Logs Viewer Modal */}
+      {showUploadedLogs && (
+        <UploadedLogsViewer onClose={() => setShowUploadedLogs(false)} />
+      )}
     </div>
   );
 }; 

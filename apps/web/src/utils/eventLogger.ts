@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { EventEntry } from '../types';
+import { logUploadService } from '../services/logUploadService';
 
 const STORAGE_KEY = '_eventLog';
 const sessionId = uuid();
@@ -379,5 +380,34 @@ export const logSystemEvent = {
     });
   }
 };
+
+// Upload logs to backend
+export async function uploadLogsToBackend(): Promise<{ success: boolean; logId?: string; error?: string }> {
+  try {
+    const logs = flushEvents();
+    if (logs.length === 0) {
+      return { success: false, error: 'No logs to upload' };
+    }
+    
+    const result = await logUploadService.uploadLogs(logs, sessionId);
+    return result;
+  } catch (error) {
+    console.error('Failed to upload logs:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
+
+// Get uploaded logs from backend
+export async function getUploadedLogs(sessionId?: string) {
+  return await logUploadService.getUploadedLogs(sessionId);
+}
+
+// Delete uploaded logs from backend
+export async function deleteUploadedLogs(logId: string) {
+  return await logUploadService.deleteUploadedLogs(logId);
+}
 
 export { flushNow }; 
