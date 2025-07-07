@@ -33,6 +33,21 @@ function scheduleFlush() {
   }
 }
 
+function flushNow() {
+  try {
+    if (inMemoryBuffer.length === 0) return;
+    const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(existing.concat(inMemoryBuffer))
+    );
+    inMemoryBuffer = [];
+    flushScheduled = false;
+  } catch {
+    // silent drop
+  }
+}
+
 export function logEvent(type: string, details: object) {
   try {
     const entry: EventEntry = {
@@ -149,6 +164,48 @@ export const logUserAction = {
       oldValue,
       newValue,
       category: 'profile'
+    });
+  },
+
+  // Multi-step process logging
+  processStarted: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('user_action', { 
+      action: 'process_started',
+      processName,
+      step,
+      context,
+      category: 'navigation'
+    });
+  },
+
+  processStep: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('user_action', { 
+      action: 'process_step',
+      processName,
+      step,
+      context,
+      category: 'navigation'
+    });
+  },
+
+  processCompleted: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('user_action', { 
+      action: 'process_completed',
+      processName,
+      step,
+      context,
+      category: 'navigation'
+    });
+  },
+
+  processFailed: (processName: string, step: string, error: string, context?: Record<string, any>) => {
+    logEvent('user_action', { 
+      action: 'process_failed',
+      processName,
+      step,
+      error,
+      context,
+      category: 'navigation'
     });
   }
 };
@@ -278,5 +335,49 @@ export const logSystemEvent = {
       fileSize,
       category: 'transfer'
     });
+  },
+
+  // Multi-step system process logging
+  systemProcessStarted: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('system_event', { 
+      event: 'system_process_started',
+      processName,
+      step,
+      context,
+      category: 'connection'
+    });
+  },
+
+  systemProcessStep: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('system_event', { 
+      event: 'system_process_step',
+      processName,
+      step,
+      context,
+      category: 'connection'
+    });
+  },
+
+  systemProcessCompleted: (processName: string, step: string, context?: Record<string, any>) => {
+    logEvent('system_event', { 
+      event: 'system_process_completed',
+      processName,
+      step,
+      context,
+      category: 'connection'
+    });
+  },
+
+  systemProcessFailed: (processName: string, step: string, error: string, context?: Record<string, any>) => {
+    logEvent('system_event', { 
+      event: 'system_process_failed',
+      processName,
+      step,
+      error,
+      context,
+      category: 'error'
+    });
   }
-}; 
+};
+
+export { flushNow }; 

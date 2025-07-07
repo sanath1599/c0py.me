@@ -23,7 +23,9 @@ import {
   CheckCircle,
   Globe,
   Lock,
-  Wifi
+  Wifi,
+  Play,
+  ArrowRight
 } from 'lucide-react';
 
 interface EventTableProps {
@@ -200,6 +202,19 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
   const getEventTypeColor = (type: string, details: any) => {
     if (type === 'user_action') {
       const category = details.category;
+      const action = details.action;
+      
+      // Special colors for process events
+      if (action && action.startsWith('process_')) {
+        const processColors: Record<string, string> = {
+          process_started: 'bg-blue-100 text-blue-800 border-blue-200',
+          process_step: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+          process_completed: 'bg-green-100 text-green-800 border-green-200',
+          process_failed: 'bg-red-100 text-red-800 border-red-200',
+        };
+        return processColors[action] || 'bg-gray-100 text-gray-800 border-gray-200';
+      }
+      
       const colors: Record<string, string> = {
         navigation: 'bg-blue-100 text-blue-800 border-blue-200',
         interaction: 'bg-green-100 text-green-800 border-green-200',
@@ -211,6 +226,19 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
     
     if (type === 'system_event') {
       const category = details.category;
+      const event = details.event;
+      
+      // Special colors for system process events
+      if (event && event.startsWith('system_process_')) {
+        const processColors: Record<string, string> = {
+          system_process_started: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+          system_process_step: 'bg-blue-100 text-blue-800 border-blue-200',
+          system_process_completed: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+          system_process_failed: 'bg-red-100 text-red-800 border-red-200',
+        };
+        return processColors[event] || 'bg-gray-100 text-gray-800 border-gray-200';
+      }
+      
       const colors: Record<string, string> = {
         connection: 'bg-indigo-100 text-indigo-800 border-indigo-200',
         webrtc: 'bg-cyan-100 text-cyan-800 border-cyan-200',
@@ -245,6 +273,20 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
       error: <AlertTriangle className="w-3 h-3" />,
     };
     return icons[category] || <Activity className="w-3 h-3" />;
+  };
+
+  const getProcessIcon = (action: string) => {
+    const processIcons: Record<string, React.ReactNode> = {
+      process_started: <Play className="w-3 h-3" />,
+      process_step: <ArrowRight className="w-3 h-3" />,
+      process_completed: <CheckCircle className="w-3 h-3" />,
+      process_failed: <X className="w-3 h-3" />,
+      system_process_started: <Play className="w-3 h-3" />,
+      system_process_step: <ArrowRight className="w-3 h-3" />,
+      system_process_completed: <CheckCircle className="w-3 h-3" />,
+      system_process_failed: <X className="w-3 h-3" />,
+    };
+    return processIcons[action] || <Activity className="w-3 h-3" />;
   };
 
   const getActiveFilterCount = () => {
@@ -492,124 +534,127 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
             </thead>
             <tbody>
               {sortedEvents.map((event) => (
-                <motion.tr
-                  key={event.id}
-                  className="border-b border-gray-100 hover:bg-white/50 transition-colors"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {formatTimestamp(event.timestamp)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getEventTypeColor(event.type, event.details)}`}>
-                      {event.type === 'user_action' ? event.details.action : 
-                       event.type === 'system_event' ? event.details.event : 
-                       event.type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {event.details.category && (
-                      <div className="flex items-center space-x-2">
-                        {getCategoryIcon(event.details.category)}
-                        <span className="text-sm text-gray-600 capitalize">
-                          {event.details.category.replace('_', ' ')}
-                        </span>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => toggleEventExpansion(event.id)}
-                      className="flex items-center space-x-2 text-left hover:text-gray-600 transition-colors"
-                    >
-                      {expandedEvents.has(event.id) ? (
-                        <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4" />
-                      )}
-                      <span className="text-sm text-gray-700">
-                        {expandedEvents.has(event.id) ? 'Hide' : 'View'} Details
+                <React.Fragment key={event.id}>
+                  <motion.tr
+                    className="border-b border-gray-100 hover:bg-white/50 transition-colors"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {formatTimestamp(event.timestamp)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getEventTypeColor(event.type, event.details)}`}>
+                        {event.type === 'user_action' ? event.details.action : 
+                         event.type === 'system_event' ? event.details.event : 
+                         event.type}
                       </span>
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-500 font-mono">
-                    {event.sessionId.slice(0, 8)}...
-                  </td>
-                </motion.tr>
+                    </td>
+                    <td className="px-4 py-3">
+                      {event.details.category && (
+                        <div className="flex items-center space-x-2">
+                          {event.details.action && event.details.action.startsWith('process_') ? 
+                            getProcessIcon(event.details.action) :
+                            event.details.event && event.details.event.startsWith('system_process_') ?
+                            getProcessIcon(event.details.event) :
+                            getCategoryIcon(event.details.category)
+                          }
+                          <span className="text-sm text-gray-600 capitalize">
+                            {event.details.category.replace('_', ' ')}
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => toggleEventExpansion(event.id)}
+                        className="flex items-center space-x-2 text-left hover:text-gray-600 transition-colors"
+                      >
+                        {expandedEvents.has(event.id) ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
+                        <span className="text-sm text-gray-700">
+                          {expandedEvents.has(event.id) ? 'Hide' : 'View'} Details
+                        </span>
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500 font-mono">
+                      {event.sessionId.slice(0, 8)}...
+                    </td>
+                  </motion.tr>
+                  
+                  {/* Expanded Details Row */}
+                  {expandedEvents.has(event.id) && (
+                    <motion.tr
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="border-b border-gray-100"
+                    >
+                      <td colSpan={5} className="p-0">
+                        <div className="p-6 bg-gradient-to-r from-gray-50/50 to-orange-50/30">
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                              <div>
+                                <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center space-x-2">
+                                  <FileText className="w-4 h-4" />
+                                  <span>Event Details</span>
+                                </h4>
+                                <pre className="text-xs bg-white/70 p-4 rounded-lg overflow-x-auto border border-gray-200 shadow-sm">
+                                  {JSON.stringify(event.details, null, 2)}
+                                </pre>
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center space-x-2">
+                                  <Settings className="w-4 h-4" />
+                                  <span>Event Metadata</span>
+                                </h4>
+                                <div className="space-y-2 text-xs bg-white/70 p-4 rounded-lg border border-gray-200 shadow-sm">
+                                  <div className="flex justify-between">
+                                    <span className="font-medium text-gray-600">ID:</span>
+                                    <span className="font-mono text-gray-800">{event.id}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="font-medium text-gray-600">Session:</span>
+                                    <span className="font-mono text-gray-800">{event.sessionId}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="font-medium text-gray-600">Timestamp:</span>
+                                    <span className="font-mono text-gray-800">{event.timestamp}</span>
+                                  </div>
+                                  {event.userId && (
+                                    <div className="flex justify-between">
+                                      <span className="font-medium text-gray-600">User:</span>
+                                      <span className="font-mono text-gray-800">{event.userId}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between">
+                                    <span className="font-medium text-gray-600">Type:</span>
+                                    <span className="font-mono text-gray-800">{event.type}</span>
+                                  </div>
+                                  {event.details.category && (
+                                    <div className="flex justify-between">
+                                      <span className="font-medium text-gray-600">Category:</span>
+                                      <span className="font-mono text-gray-800">{event.details.category}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
         </div>
-
-        {/* Enhanced Expanded Details */}
-        {sortedEvents.map((event) => (
-          <motion.div
-            key={`details-${event.id}`}
-            initial={false}
-            animate={{
-              height: expandedEvents.has(event.id) ? 'auto' : 0,
-              opacity: expandedEvents.has(event.id) ? 1 : 0,
-            }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            {expandedEvents.has(event.id) && (
-              <div className="p-6 bg-gradient-to-r from-gray-50/50 to-orange-50/30 border-t border-gray-100">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center space-x-2">
-                        <FileText className="w-4 h-4" />
-                        <span>Event Details</span>
-                      </h4>
-                      <pre className="text-xs bg-white/70 p-4 rounded-lg overflow-x-auto border border-gray-200 shadow-sm">
-                        {JSON.stringify(event.details, null, 2)}
-                      </pre>
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center space-x-2">
-                        <Settings className="w-4 h-4" />
-                        <span>Event Metadata</span>
-                      </h4>
-                      <div className="space-y-2 text-xs bg-white/70 p-4 rounded-lg border border-gray-200 shadow-sm">
-                        <div className="flex justify-between">
-                          <span className="font-medium text-gray-600">ID:</span>
-                          <span className="font-mono text-gray-800">{event.id}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="font-medium text-gray-600">Session:</span>
-                          <span className="font-mono text-gray-800">{event.sessionId}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="font-medium text-gray-600">Timestamp:</span>
-                          <span className="font-mono text-gray-800">{event.timestamp}</span>
-                        </div>
-                        {event.userId && (
-                          <div className="flex justify-between">
-                            <span className="font-medium text-gray-600">User:</span>
-                            <span className="font-mono text-gray-800">{event.userId}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between">
-                          <span className="font-medium text-gray-600">Type:</span>
-                          <span className="font-mono text-gray-800">{event.type}</span>
-                        </div>
-                        {event.details.category && (
-                          <div className="flex justify-between">
-                            <span className="font-medium text-gray-600">Category:</span>
-                            <span className="font-mono text-gray-800">{event.details.category}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </motion.div>
-        ))}
       </GlassCard>
     </div>
   );

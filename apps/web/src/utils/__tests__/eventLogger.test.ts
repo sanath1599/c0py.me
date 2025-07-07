@@ -1,4 +1,4 @@
-import { logEvent, flushEvents, clearEvents, logUserAction, logSystemEvent } from '../eventLogger';
+import { logEvent, flushEvents, clearEvents, logUserAction, logSystemEvent, flushNow } from '../eventLogger';
 import { EventEntry } from '../../types';
 
 // Mock localStorage
@@ -29,7 +29,7 @@ Object.defineProperty(window, 'requestIdleCallback', {
 });
 
 const waitForFlush = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  flushNow();
 };
 
 describe('EventLogger', () => {
@@ -173,6 +173,75 @@ describe('EventLogger', () => {
         },
       });
     });
+
+    it('should log process started events', async () => {
+      logUserAction.processStarted('file_transfer', 'transfer_initiated', { peerId: 'peer-123' });
+      await waitForFlush();
+      expect(localStorageMock.setItem).toHaveBeenCalled();
+      const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+      expect(storedData[0]).toMatchObject({
+        type: 'user_action',
+        details: { 
+          action: 'process_started',
+          processName: 'file_transfer',
+          step: 'transfer_initiated',
+          context: { peerId: 'peer-123' },
+          category: 'navigation'
+        },
+      });
+    });
+
+    it('should log process step events', async () => {
+      logUserAction.processStep('file_transfer', 'sending_file', { fileName: 'test.txt' });
+      await waitForFlush();
+      expect(localStorageMock.setItem).toHaveBeenCalled();
+      const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+      expect(storedData[0]).toMatchObject({
+        type: 'user_action',
+        details: { 
+          action: 'process_step',
+          processName: 'file_transfer',
+          step: 'sending_file',
+          context: { fileName: 'test.txt' },
+          category: 'navigation'
+        },
+      });
+    });
+
+    it('should log process completed events', async () => {
+      logUserAction.processCompleted('file_transfer', 'transfer_sent', { fileCount: 1 });
+      await waitForFlush();
+      expect(localStorageMock.setItem).toHaveBeenCalled();
+      const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+      expect(storedData[0]).toMatchObject({
+        type: 'user_action',
+        details: { 
+          action: 'process_completed',
+          processName: 'file_transfer',
+          step: 'transfer_sent',
+          context: { fileCount: 1 },
+          category: 'navigation'
+        },
+      });
+    });
+
+    it('should log process failed events', async () => {
+      logUserAction.processFailed('file_transfer', 'connection_failed', 'Network error', { peerId: 'peer-123' });
+      await waitForFlush();
+      expect(localStorageMock.setItem).toHaveBeenCalled();
+      const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+      expect(storedData[0]).toMatchObject({
+        type: 'user_action',
+        details: { 
+          action: 'process_failed',
+          processName: 'file_transfer',
+          step: 'connection_failed',
+          error: 'Network error',
+          context: { peerId: 'peer-123' },
+          category: 'navigation'
+        },
+      });
+    });
   });
 
   describe('logSystemEvent', () => {
@@ -239,6 +308,75 @@ describe('EventLogger', () => {
           errorType: 'NetworkError', 
           errorMessage: 'Connection failed',
           context: { context: 'test' },
+          category: 'error'
+        },
+      });
+    });
+
+    it('should log system process started events', async () => {
+      logSystemEvent.systemProcessStarted('webrtc_connection', 'creating_peer_connection', { peerId: 'peer-123' });
+      await waitForFlush();
+      expect(localStorageMock.setItem).toHaveBeenCalled();
+      const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+      expect(storedData[0]).toMatchObject({
+        type: 'system_event',
+        details: { 
+          event: 'system_process_started',
+          processName: 'webrtc_connection',
+          step: 'creating_peer_connection',
+          context: { peerId: 'peer-123' },
+          category: 'connection'
+        },
+      });
+    });
+
+    it('should log system process step events', async () => {
+      logSystemEvent.systemProcessStep('webrtc_connection', 'data_channel_opened', { transferId: 'transfer-123' });
+      await waitForFlush();
+      expect(localStorageMock.setItem).toHaveBeenCalled();
+      const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+      expect(storedData[0]).toMatchObject({
+        type: 'system_event',
+        details: { 
+          event: 'system_process_step',
+          processName: 'webrtc_connection',
+          step: 'data_channel_opened',
+          context: { transferId: 'transfer-123' },
+          category: 'connection'
+        },
+      });
+    });
+
+    it('should log system process completed events', async () => {
+      logSystemEvent.systemProcessCompleted('webrtc_connection', 'transfer_completed', { fileSize: 1024000 });
+      await waitForFlush();
+      expect(localStorageMock.setItem).toHaveBeenCalled();
+      const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+      expect(storedData[0]).toMatchObject({
+        type: 'system_event',
+        details: { 
+          event: 'system_process_completed',
+          processName: 'webrtc_connection',
+          step: 'transfer_completed',
+          context: { fileSize: 1024000 },
+          category: 'connection'
+        },
+      });
+    });
+
+    it('should log system process failed events', async () => {
+      logSystemEvent.systemProcessFailed('webrtc_connection', 'connection_failed', 'ICE connection failed', { peerId: 'peer-123' });
+      await waitForFlush();
+      expect(localStorageMock.setItem).toHaveBeenCalled();
+      const storedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+      expect(storedData[0]).toMatchObject({
+        type: 'system_event',
+        details: { 
+          event: 'system_process_failed',
+          processName: 'webrtc_connection',
+          step: 'connection_failed',
+          error: 'ICE connection failed',
+          context: { peerId: 'peer-123' },
           category: 'error'
         },
       });

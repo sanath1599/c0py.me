@@ -141,6 +141,17 @@ export const useWebRTC = (
     console.log(`📤 Sending file ${file.name} to ${peer.name}`);
     
     const transferId = `send-${Date.now()}-${Math.random()}`;
+    const processName = 'webrtc_file_transfer';
+    
+    // Log transfer initiation
+    logSystemEvent.systemProcessStarted(processName, 'transfer_initiated', {
+      transferId,
+      peerId: peer.id,
+      peerName: peer.name,
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type
+    });
     
     // Add to transfers list
     setTransfers(prev => [...prev, {
@@ -156,6 +167,15 @@ export const useWebRTC = (
     // Check if peer is online
     if (!peer.isOnline || !isConnected) {
       console.log(`📦 Peer ${peer.name} is offline, storing request`);
+      
+      logSystemEvent.systemProcessStep(processName, 'peer_offline_storing_request', {
+        transferId,
+        peerId: peer.id,
+        peerName: peer.name,
+        isOnline: peer.isOnline,
+        isConnected
+      });
+      
       await storePendingRequest(peer.id, file, transferId);
       setTransfers(prev => prev.map(t => 
         t.id === transferId ? { ...t, status: 'pending' } : t
@@ -165,14 +185,38 @@ export const useWebRTC = (
 
     try {
       // Always create a new connection for each transfer
+      logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
+        transferId,
+        peerId: peer.id
+      });
+      
       const pc = createPeerConnection(peer.id);
+      
       // Create data channel
+      logSystemEvent.systemProcessStep(processName, 'creating_data_channel', {
+        transferId,
+        peerId: peer.id
+      });
+      
       const dataChannel = pc.createDataChannel('file-transfer', {
         ordered: true
       });
       dataChannel.onopen = () => {
         console.log('📤 Data channel opened for sending');
+        
+        logSystemEvent.systemProcessStep(processName, 'data_channel_opened', {
+          transferId,
+          peerId: peer.id
+        });
+        
         // Send file request first
+        logSystemEvent.systemProcessStep(processName, 'sending_file_request', {
+          transferId,
+          peerId: peer.id,
+          fileName: file.name,
+          fileSize: file.size
+        });
+        
         dataChannel.send(JSON.stringify({
           type: 'file-request',
           fileName: file.name,
@@ -189,13 +233,25 @@ export const useWebRTC = (
             const message = JSON.parse(event.data);
             if (message.type === 'file-accepted' && message.transferId === transferId) {
               console.log('📤 File accepted, starting transfer');
-        setTransfers(prev => prev.map(t => 
-          t.id === transferId ? { ...t, status: 'transferring' } : t
-        ));
-        // Start file transfer
-        sendFileInChunks(dataChannel, file, transferId);
+              
+              logSystemEvent.systemProcessStep(processName, 'file_accepted', {
+                transferId,
+                peerId: peer.id
+              });
+              
+              setTransfers(prev => prev.map(t => 
+                t.id === transferId ? { ...t, status: 'transferring' } : t
+              ));
+              // Start file transfer
+              sendFileInChunks(dataChannel, file, transferId);
             } else if (message.type === 'file-rejected' && message.transferId === transferId) {
               console.log('📤 File rejected');
+              
+              logSystemEvent.systemProcessFailed(processName, 'file_rejected', 'File transfer was rejected by recipient', {
+                transferId,
+                peerId: peer.id
+              });
+              
               setTransfers(prev => prev.map(t =>
                 t.id === transferId ? { ...t, status: 'cancelled' } : t
               ));
@@ -208,12 +264,25 @@ export const useWebRTC = (
       };
       dataChannel.onerror = (error) => {
         console.error('❌ Data channel error:', error);
+        
+        logSystemEvent.systemProcessFailed(processName, 'data_channel_error', 'Data channel error occurred', {
+          transferId,
+          peerId: peer.id,
+          error: error.toString()
+        });
+        
         setTransfers(prev => prev.map(t => 
           t.id === transferId ? { ...t, status: 'failed' } : t
         ));
       };
       dataChannel.onclose = () => {
         console.log('📤 Data channel closed');
+        
+        logSystemEvent.systemProcessStep(processName, 'data_channel_closed', {
+          transferId,
+          peerId: peer.id
+        });
+        
         // Remove from data channels ref
         dataChannelsRef.current.delete(peer.id);
         // Remove closed connection
@@ -222,8 +291,20 @@ export const useWebRTC = (
       dataChannelsRef.current.set(peer.id, dataChannel);
       // Create offer
       console.log(`📤 Creating offer for ${peer.id}`);
+      
+      logSystemEvent.systemProcessStep(processName, 'creating_offer', {
+        transferId,
+        peerId: peer.id
+      });
+      
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+      
+      logSystemEvent.systemProcessStep(processName, 'sending_offer', {
+        transferId,
+        peerId: peer.id
+      });
+      
       console.log(`📤 Sending offer to ${peer.id}`);
       onSignal(peer.id, userId, {
         type: 'offer',
@@ -231,6 +312,14 @@ export const useWebRTC = (
       });
     } catch (error) {
       console.error('❌ Error sending file:', error);
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logSystemEvent.systemProcessFailed(processName, 'connection_failed', errorMessage, {
+        transferId,
+        peerId: peer.id,
+        fileName: file.name
+      });
+      
       setTransfers(prev => prev.map(t => 
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));

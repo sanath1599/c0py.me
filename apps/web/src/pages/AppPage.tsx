@@ -129,24 +129,57 @@ export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
   };
 
   const handleSendFiles = async (files: File[], peer: Peer) => {
+    const processName = 'file_transfer';
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    const fileTypes = [...new Set(files.map(file => file.type))];
+    
     try {
-      // Calculate total size
-      const totalSize = files.reduce((sum, file) => sum + file.size, 0);
-      const fileTypes = [...new Set(files.map(file => file.type))];
+      // Start file transfer process
+      logUserAction.processStarted(processName, 'transfer_initiated', { 
+        peerId: peer.id, 
+        peerName: peer.name,
+        fileCount: files.length, 
+        totalSize,
+        fileTypes 
+      });
       
-      // Log transfer initiation
       logUserAction.transferInitiated(peer.id, files.length, totalSize);
       
-      // Send each file individually
-      for (const file of files) {
+      // Log each file being sent
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        logUserAction.processStep(processName, `sending_file_${i + 1}`, {
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+          fileIndex: i + 1,
+          totalFiles: files.length
+        });
+        
         await sendFile(file, peer);
       }
+      
       addToast('success', `Sending ${files.length} file(s) to ${peer.name}...`);
       setSelectedFiles([]); // Clear selection after sending
+      
+      logUserAction.processCompleted(processName, 'transfer_sent', {
+        peerId: peer.id,
+        peerName: peer.name,
+        fileCount: files.length,
+        totalSize
+      });
+      
     } catch (error) {
       console.error('Failed to send files:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addToast('error', `Failed to send files to ${peer.name}`);
       logSystemEvent.error('file_transfer', `Failed to send files to ${peer.name}`, { peerId: peer.id, fileCount: files.length });
+      logUserAction.processFailed(processName, 'transfer_failed', errorMessage, {
+        peerId: peer.id,
+        peerName: peer.name,
+        fileCount: files.length,
+        totalSize
+      });
     }
   };
 
@@ -202,10 +235,59 @@ export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
   };
 
   const handleProfileUpdate = (profile: { name: string; emoji: string; color: string }) => {
+    const processName = 'profile_update';
     const oldName = currentUser.name;
-    setCurrentUser(prev => ({ ...prev, ...profile }));
-    updateProfile(profile.name, profile.color, profile.emoji);
-    logUserAction.profileUpdated('name', oldName, profile.name);
+    const oldEmoji = currentUser.emoji;
+    const oldColor = currentUser.color;
+    
+    try {
+      logUserAction.processStarted(processName, 'profile_update_initiated', {
+        oldName,
+        newName: profile.name,
+        oldEmoji,
+        newEmoji: profile.emoji,
+        oldColor,
+        newColor: profile.color
+      });
+      
+      setCurrentUser(prev => ({ ...prev, ...profile }));
+      
+      logUserAction.processStep(processName, 'profile_updated_locally', {
+        newName: profile.name,
+        newEmoji: profile.emoji,
+        newColor: profile.color
+      });
+      
+      updateProfile(profile.name, profile.color, profile.emoji);
+      
+      logUserAction.processStep(processName, 'profile_synced_to_server', {
+        newName: profile.name,
+        newEmoji: profile.emoji,
+        newColor: profile.color
+      });
+      
+      logUserAction.profileUpdated('name', oldName, profile.name);
+      
+      logUserAction.processCompleted(processName, 'profile_update_completed', {
+        oldName,
+        newName: profile.name,
+        oldEmoji,
+        newEmoji: profile.emoji,
+        oldColor,
+        newColor: profile.color
+      });
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logUserAction.processFailed(processName, 'profile_update_failed', errorMessage, {
+        oldName,
+        newName: profile.name,
+        oldEmoji,
+        newEmoji: profile.emoji,
+        oldColor,
+        newColor: profile.color
+      });
+    }
   };
 
   const ZipPreview: React.FC<{ file: File }> = ({ file }) => {
@@ -252,36 +334,57 @@ export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
   };
 
   const handleWorldSelect = (world: WorldType) => {
-    // Log world selection
+    // Start world selection process
+    logUserAction.processStarted('world_selection', 'world_clicked', { world });
     logUserAction.worldSelected(world);
 
     if (world === 'room') {
+      logUserAction.processStep('world_selection', 'show_room_modal', { world });
       setShowRoomModal(true);
       setPendingWorld(world);
     } else if (world === 'family') {
+      logUserAction.processStep('world_selection', 'show_family_notice', { world });
       setShowFamilyNotice(true);
       setPendingWorld(world);
     } else {
       // Jungle - direct selection
+      logUserAction.processStep('world_selection', 'direct_selection', { world });
       setSelectedWorld(world);
+      logUserAction.processCompleted('world_selection', 'jungle_selected', { world });
     }
   };
 
   const handleRoomJoin = (roomId: string) => {
     if (isConnected && pendingWorld === 'room') {
-      joinRoom(roomId, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
-      setSelectedWorld('room');
-      setPendingWorld(null);
-      logUserAction.roomJoined(roomId, 'room');
+      logUserAction.processStep('world_selection', 'room_join_attempt', { roomId, world: 'room' });
+      
+      try {
+        joinRoom(roomId, currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+        setSelectedWorld('room');
+        setPendingWorld(null);
+        logUserAction.roomJoined(roomId, 'room');
+        logUserAction.processCompleted('world_selection', 'room_joined', { roomId, world: 'room' });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        logUserAction.processFailed('world_selection', 'room_join_failed', errorMessage, { roomId, world: 'room' });
+      }
     }
   };
 
   const handleFamilyAccept = () => {
     if (isConnected && pendingWorld === 'family') {
-      joinFamilyRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
-      setSelectedWorld('family');
-      setPendingWorld(null);
-      setShowFamilyNotice(false);
+      logUserAction.processStep('world_selection', 'family_accept_attempt', { world: 'family' });
+      
+      try {
+        joinFamilyRoom(currentUser.id, currentUser.name, currentUser.color, currentUser.emoji);
+        setSelectedWorld('family');
+        setPendingWorld(null);
+        setShowFamilyNotice(false);
+        logUserAction.processCompleted('world_selection', 'family_joined', { world: 'family' });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        logUserAction.processFailed('world_selection', 'family_join_failed', errorMessage, { world: 'family' });
+      }
     }
   };
 
