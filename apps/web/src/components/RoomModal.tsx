@@ -47,7 +47,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   onClose,
   onJoinRoom,
 }) => {
-  const [tab, setTab] = useState<'create' | 'join'>('join');
+  const [tab, setTab] = useState<'create' | 'join'>('create');
   const [roomId, setRoomId] = useState('');
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);

@@ -26,6 +26,7 @@ import { AnalyticsDebug } from '../components/AnalyticsDebug';
 import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
 import Confetti from 'react-confetti';
+import FamilyWifiWarningModal from '../components/FamilyWifiWarningModal';
 
 const WORLD_OPTIONS = [
   { key: 'jungle', label: 'Jungle', icon: '🌍', desc: 'Open space, send to anyone' },
@@ -81,6 +82,7 @@ export const AppPage: React.FC = () => {
   const [pendingWorld, setPendingWorld] = useState<WorldType | null>(null);
   const [showDemo, setShowDemo] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showFamilyWifiWarning, setShowFamilyWifiWarning] = useState(false);
 
   // Join default jungle room when connection is established
   useEffect(() => {
@@ -233,6 +235,12 @@ export const AppPage: React.FC = () => {
       setShowRoomModal(true);
       setPendingWorld(world);
     } else if (world === 'family') {
+      // Check network type using Network Information API
+      const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+      if (connection && connection.type && connection.type !== 'wifi') {
+        setShowFamilyWifiWarning(true);
+        return;
+      }
       setShowFamilyNotice(true);
       setPendingWorld(world);
     } else {
@@ -377,6 +385,17 @@ const filteredPeers = React.useMemo(() => {
           />
         )}
       </AnimatePresence>
+
+      {/* Family WiFi Warning Modal */}
+      <FamilyWifiWarningModal
+        isOpen={showFamilyWifiWarning}
+        onClose={() => setShowFamilyWifiWarning(false)}
+        onCreateRoom={() => {
+          setShowFamilyWifiWarning(false);
+          setShowRoomModal(true);
+          setPendingWorld('room');
+        }}
+      />
 
       {/* Navbar with animated logo */}
       <motion.header

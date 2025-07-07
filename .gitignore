@@ -1,6 +1,7 @@
 # Logs
 logs
 *.log
+pnpm-lock.yaml
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -140,19 +141,9 @@ vite.config.ts.timestamp-*
 
 # Ignore production environment files
 apps/api/.env.prod
-.turbo/cookies/1.cookie
-.turbo/cookies/2.cookie
-.turbo/cookies/3.cookie
-.turbo/cookies/4.cookie
-.turbo/cookies/5.cookie
-.turbo/cookies/6.cookie
-.turbo/cookies/7.cookie
-.turbo/cookies/8.cookie
-.turbo/cookies/9.cookie
-.turbo/daemon/22bccc1a4b01d0e6-turbo.log.2025-07-05
 
 # Ignore TurboRepo cookies
 .turbo/cookies/*.cookie
-.turbo/cache/27bc6fbcb627a4d4-meta.json
-.turbo/cache/27bc6fbcb627a4d4.tar.zst
-pnpm-lock.yaml
+.turbo/cache/*
+.turbo/daemon/*
+
