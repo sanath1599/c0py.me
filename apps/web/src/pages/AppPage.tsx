@@ -22,7 +22,7 @@ import {
   trackError,
   trackPrivacyEvents 
 } from '../utils/analytics';
-import { AnalyticsDebug } from '../components/AnalyticsDebug';
+
 import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
 import Confetti from 'react-confetti';
@@ -669,7 +669,6 @@ const filteredPeers = React.useMemo(() => {
 
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
-      <AnalyticsDebug />
       
       {/* Demo Modal */}
       <DemoModal isOpen={showDemo} onClose={() => setShowDemo(false)} />
