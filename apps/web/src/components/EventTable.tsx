@@ -196,7 +196,15 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
 
   const formatTimestamp = (timestamp: number) => {
     const date = new Date(timestamp);
-    return date.toLocaleString();
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
   };
 
   const getEventTypeColor = (type: string, details: any) => {
@@ -287,6 +295,21 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
       system_process_failed: <X className="w-3 h-3" />,
     };
     return processIcons[action] || <Activity className="w-3 h-3" />;
+  };
+
+  const getCategoryPillColor = (category: string) => {
+    const colors: Record<string, string> = {
+      navigation: 'bg-blue-100 text-blue-800 border-blue-200',
+      interaction: 'bg-green-100 text-green-800 border-green-200',
+      file_operation: 'bg-orange-100 text-orange-800 border-orange-200',
+      profile: 'bg-purple-100 text-purple-800 border-purple-200',
+      connection: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+      webrtc: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+      transfer: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      api: 'bg-violet-100 text-violet-800 border-violet-200',
+      error: 'bg-red-100 text-red-800 border-red-200',
+    };
+    return colors[category] || 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   const getActiveFilterCount = () => {
@@ -544,28 +567,21 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
                     <td className="px-4 py-3 text-sm text-gray-600">
                       {formatTimestamp(event.timestamp)}
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getEventTypeColor(event.type, event.details)}`}>
-                        {event.type === 'user_action' ? event.details.action : 
-                         event.type === 'system_event' ? event.details.event : 
-                         event.type}
+                                      <td className="px-4 py-3">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getEventTypeColor(event.type, event.details)}`}>
+                      {event.type === 'user_action' ? event.details.action : 
+                       event.type === 'system_event' ? event.details.event : 
+                       event.type}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {event.details.category && (
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getCategoryPillColor(event.details.category)}`}>
+                        {event.details.category.replace('_', ' ')}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {event.details.category && (
-                        <div className="flex items-center space-x-2">
-                          {event.details.action && event.details.action.startsWith('process_') ? 
-                            getProcessIcon(event.details.action) :
-                            event.details.event && event.details.event.startsWith('system_process_') ?
-                            getProcessIcon(event.details.event) :
-                            getCategoryIcon(event.details.category)
-                          }
-                          <span className="text-sm text-gray-600 capitalize">
-                            {event.details.category.replace('_', ' ')}
-                          </span>
-                        </div>
-                      )}
-                    </td>
+                    )}
+                  </td>
+                    
                     <td className="px-4 py-3">
                       <button
                         onClick={() => toggleEventExpansion(event.id)}
@@ -595,7 +611,7 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
                       transition={{ duration: 0.2 }}
                       className="border-b border-gray-100"
                     >
-                      <td colSpan={5} className="p-0">
+                      <td colSpan={6} className="p-0">
                         <div className="p-6 bg-gradient-to-r from-gray-50/50 to-orange-50/30">
                           <div className="space-y-4">
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -624,7 +640,7 @@ export const EventTable: React.FC<EventTableProps> = ({ events, onClear }) => {
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="font-medium text-gray-600">Timestamp:</span>
-                                    <span className="font-mono text-gray-800">{event.timestamp}</span>
+                                    <span className="font-mono text-gray-800">{formatTimestamp(event.timestamp)}</span>
                                   </div>
                                   {event.userId && (
                                     <div className="flex justify-between">

@@ -665,7 +665,15 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                       <td className="px-4 py-2">{direction}</td>
                       <td className="px-4 py-2">{formatFileSize(t.file.size)}</td>
                       <td className="px-4 py-2">Completed</td>
-                      <td className="px-4 py-2">{times?.end ? new Date(times.end).toLocaleString() : '-'}</td>
+                      <td className="px-4 py-2">{times?.end ? new Date(times.end).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true
+                      }) : '-'}</td>
                       <td className="px-4 py-2">{times?.duration ? `${(times.duration / 1000).toFixed(1)}s` : '-'}</td>
                     </tr>
                   );
