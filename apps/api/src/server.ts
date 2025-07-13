@@ -15,14 +15,18 @@ const execAsync = promisify(exec);
 dotenv.config();
 
 const config = getEnvironmentConfig();
-
 const app = express();
 const server = createServer(app);
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 4001;
+const allowedOrigins = config.CORS_ORIGIN.split(',').map((o: string) => o.trim());
 
-// Middleware
+// Robust CORS middleware for all API endpoints (including /api/logs)
 app.use(cors({
-  origin: config.CORS_ORIGIN.split(',').map((o: string) => o.trim()), // Support comma-separated origins
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // allow non-browser requests
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'), false);
+  },
   credentials: true
 }));
 app.use(express.json());
