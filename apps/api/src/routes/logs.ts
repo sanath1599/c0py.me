@@ -2,6 +2,8 @@ import express, { Request, Response } from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
+import cors from 'cors';
+import { getEnvironmentConfig } from '../../../../packages/config/env';
 
 const router: express.Router = express.Router();
 
@@ -17,6 +19,19 @@ const ensureLogsDir = async () => {
 
 // Initialize logs directory on startup
 ensureLogsDir().catch(console.error);
+
+const config = getEnvironmentConfig();
+const allowedOrigins = config.CORS_ORIGIN.split(',').map((o: string) => o.trim());
+
+// Robust CORS middleware for all /logs routes
+router.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'), false);
+  },
+  credentials: true
+}));
 
 interface LogUploadPayload {
   sessionId: string;
