@@ -7,11 +7,14 @@ import { promisify } from 'util';
 import routes from './routes';
 import { SocketService } from './socketService';
 import redisService from './redis';
+import { getEnvironmentConfig } from '../../../packages/config/env';
 
 const execAsync = promisify(exec);
 
 // Load environment variables
 dotenv.config();
+
+const config = getEnvironmentConfig();
 
 const app = express();
 const server = createServer(app);
@@ -19,7 +22,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:5173",
+  origin: config.CORS_ORIGIN.split(',').map((o: string) => o.trim()), // Support comma-separated origins
   credentials: true
 }));
 app.use(express.json());

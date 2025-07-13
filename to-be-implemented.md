@@ -142,39 +142,218 @@ This file tracks features that have been requested but not yet implemented. Feat
 
 ---
 
-## Feature: Client-Side Event Logging - Phase 3 (Feedback Export)
+## Feature: Incoming Feedback Viewer - Admin Dashboard
 
-**Description**: Implement backend integration for sharing event logs with support for batching large payloads and non-blocking upload.
+**Description**: Implement a comprehensive admin dashboard for viewing and managing incoming feedback from clients, with enhanced filtering, statistics, and detailed log viewing capabilities.
 
 **Planned Implementation Overview**:
-- Create `ShareButton` component for non-blocking log upload
-- Implement batching system for large log payloads (500 events per batch)
-- Add backend API endpoint `/api/logs/import` for receiving logs
-- Implement progress tracking and error handling for uploads
-- Add automatic log clearing after successful upload
-- Provide user feedback for upload status
+- Create dedicated AdminDashboard page with comprehensive UI
+- Implement real-time statistics and metrics display
+- Add advanced filtering by session ID, device type, browser
+- Provide sorting and search capabilities
+- Include export functionality for log data
+- Add bulk operations (clear all logs)
+- Display detailed device information and session metadata
+- Show event summaries with expandable details
+- Integrate with existing backend API endpoints
 
 **Dependencies**: 
-- Phase 1 & 2 logger components
-- Backend API server
-- Existing error handling and toast system
+- Existing backend logs API (`/api/logs/*`)
+- Frontend log upload service
+- Existing event logging system
 
 **User Input / Notes**:
-- Upload should be non-blocking and not crash the app
-- Large logs should be batched into manageable chunks
-- Provide clear feedback on upload progress and success/failure
-- Optionally clear local logs after successful upload
-- Handle network errors gracefully with retry options
-- Integrate with existing toast notification system
+- Should provide comprehensive view of all uploaded logs
+- Include statistics cards showing total logs, events, sessions
+- Allow filtering by various criteria (session ID, device type, browser)
+- Provide sorting options (upload date, event count, session ID)
+- Include export functionality for data analysis
+- Show detailed device information and network stats
+- Display event details with proper formatting
+- Integrate with existing navigation system
+
+**Status**: completed
+
+**Implementation Details**:
+- Created `AdminDashboard` component with comprehensive UI
+- Implemented statistics cards showing total logs, events, sessions, and averages
+- Added filtering system for session ID, device type, and browser
+- Implemented sorting functionality with multiple criteria
+- Added export functionality for JSON data download
+- Included bulk operations (clear all logs)
+- Enhanced log details view with device information and metadata
+- Integrated with existing backend API endpoints
+- Added navigation integration with admin button in navbar
+- Implemented responsive design for mobile and desktop
+- Added proper error handling and loading states
+
+---
+
+## Feature: Server-Side Metrics & Stats
+
+**Description**: Track and display server-side metrics over time including active WebSocket connections, file transfer operations, unique users, and user actions with visualization through charts.
+
+**Planned Implementation Overview**:
+- Implement real-time WebSocket connection tracking
+- Add file transfer metrics (in-progress, completed, failed)
+- Track unique users and session statistics
+- Create time-series data collection system
+- Implement chart visualization (line/bar charts)
+- Add time-range filtering (last hour, 24h, all time)
+- Display connection throughput and performance metrics
+- Show user activity patterns and trends
+
+**Dependencies**: 
+- Socket service and WebRTC implementation
+- Database models for metrics storage
+- Chart visualization library
+
+**User Input / Notes**:
+- Track active WebSocket connections in real-time
+- Monitor file transfer operations and throughput
+- Display unique user counts and session statistics
+- Show user actions (clicks, forms, downloads)
+- Provide time-series visualization with charts
+- Support multiple time ranges for analysis
+- Include performance metrics and trends
 
 **Status**: pending
 
-**Technical Requirements**:
-- Backend API contract: `POST /api/logs/import` with `{ events: EventEntry[] }`
-- Batch size: 500 events per request
-- Error handling: Retry failed batches, keep successful ones
-- Progress tracking: Show upload progress to user
-- Success feedback: Clear local logs only after all batches succeed
+---
+
+## Feature: Admin Controls & Analytics
+
+**Description**: Implement advanced admin controls and analytics with filtering by time-range, user ID, event type, and include export options and administrative actions.
+
+**Planned Implementation Overview**:
+- Add time-range filtering (last hour, 24h, 7 days, 30 days, all time)
+- Implement user ID and event type filtering
+- Create advanced search and filtering controls
+- Add administrative actions (clear logs, resend notifications)
+- Implement CSV/JSON export options
+- Add bulk operations and batch processing
+- Include user management and session control
+- Provide analytics dashboard with insights
+
+**Dependencies**: 
+- Incoming Feedback Viewer implementation
+- Backend API enhancements
+- Export functionality
+
+**User Input / Notes**:
+- Allow filtering by time-range with preset options
+- Support filtering by user ID and event type
+- Include advanced search capabilities
+- Provide administrative controls for log management
+- Add export options in multiple formats
+- Include bulk operations for efficiency
+- Show analytics insights and trends
+
+**Status**: pending
+
+---
+
+## Feature: URL-Based Routing System
+
+**Description**: Implement proper URL-based routing for the application with React Router, including routes for `/app`, `/admin`, `/logs`, and improved navigation.
+
+**Planned Implementation Overview**:
+- Add React Router DOM for client-side routing
+- Implement routes for `/app`, `/admin`, `/logs`, and `/`
+- Update components to use React Router navigation
+- Add page tracking for analytics
+- Ensure proper navigation between pages
+- Handle 404 redirects to landing page
+
+**Dependencies**: 
+- React Router DOM
+- Existing page components
+- Analytics tracking system
+
+**User Input / Notes**:
+- Need proper URL routing instead of state-based navigation
+- Routes should be `/app`, `/admin`, `/logs`, and `/`
+- Should maintain existing functionality
+- Add proper page tracking for analytics
+
+**Status**: completed
+
+**Implementation Details**:
+- Added React Router DOM dependency
+- Implemented BrowserRouter with Routes and Route components
+- Created routes for `/` (LandingPage), `/app` (AppPage), `/admin` (AdminDashboard), `/logs` (ClientLogPage)
+- Updated all components to use `useNavigate` hook instead of prop-based navigation
+- Added PageTracker component for automatic page view tracking
+- Implemented 404 redirect to landing page
+- Maintained all existing functionality while improving URL structure
+
+---
+
+## Feature: Connection Stability Improvements
+
+**Description**: Fix multiple disconnections and reconnections by improving connection timeout handling, peer cleanup logic, and reconnection management.
+
+**Planned Implementation Overview**:
+- Increase ping timeout from 90s to 180s for better stability
+- Extend peer removal delay from 30s to 5 minutes for reconnection attempts
+- Increase cleanup frequency from 5 minutes to 15 minutes
+- Extend peer expiration from 5 minutes to 15 minutes
+- Add better reconnection detection and handling
+- Improve error handling for socket connections
+
+**Dependencies**: 
+- Socket service implementation
+- Redis peer management
+- Server cleanup scheduling
+
+**User Input / Notes**:
+- Users are frequently disconnecting and reconnecting
+- "Remove offline peer" messages are happening too quickly
+- Need more stable connection handling
+- Should allow for network interruptions and reconnections
+
+**Status**: completed
+
+**Implementation Details**:
+- Increased ping timeout from 90 seconds to 180 seconds (3 minutes)
+- Extended peer removal delay from 30 seconds to 5 minutes
+- Increased scheduled cleanup frequency from 5 minutes to 15 minutes
+- Extended peer expiration time from 5 minutes to 15 minutes
+- Added reconnection detection in handleJoinRoom
+- Added socket error handling to prevent crashes
+- Improved logging for reconnection events
+- All changes maintain backward compatibility
+
+---
+
+## Feature: Visualization & Infrastructure
+
+**Description**: Implement comprehensive visualization and infrastructure with real-time dashboards, charts showing trends, and performance monitoring.
+
+**Planned Implementation Overview**:
+- Create real-time dashboard with live updates
+- Implement chart visualization (line, bar, time-series)
+- Add WebSocket count monitoring
+- Display file transfer throughput metrics
+- Show events per user and per event type
+- Implement performance monitoring and alerts
+- Add infrastructure health monitoring
+- Create responsive dashboard layouts
+
+**Dependencies**: 
+- Server-side metrics implementation
+- Chart visualization library
+- Real-time data infrastructure
+
+**User Input / Notes**:
+- Real-time WebSocket connection monitoring
+- File transfer throughput visualization
+- Events per user and event type charts
+- Performance monitoring and trend analysis
+- Infrastructure health indicators
+- Responsive dashboard design
+
+**Status**: pending
 
 ---
 

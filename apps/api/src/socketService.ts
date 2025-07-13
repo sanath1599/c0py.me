@@ -2,6 +2,7 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { Peer, JoinRoomData, UpdateProfileData, SignalMessage } from './types';
 import redisService, { PendingRequest } from './redis';
+import { getEnvironmentConfig } from '../../../packages/config/env';
 
 export class SocketService {
   private io: SocketIOServer;
@@ -10,9 +11,10 @@ export class SocketService {
   private pingTimeout: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(server: HTTPServer) {
+    const config = getEnvironmentConfig();
     this.io = new SocketIOServer(server, {
       cors: {
-        origin: process.env.CLIENT_URL || "http://localhost:3000",
+        origin: config.CORS_ORIGIN.split(',').map((o: string) => o.trim()), // Support comma-separated origins
         methods: ["GET", "POST"],
         credentials: true
       },
