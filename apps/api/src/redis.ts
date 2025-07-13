@@ -134,7 +134,7 @@ export class RedisService {
       const data = await this.redis.hgetall(key);
       if (data.lastSeen) {
         const lastSeen = parseInt(data.lastSeen);
-        if (now - lastSeen > 300000) { // 5 minutes
+        if (now - lastSeen > 900000) { // 15 minutes - much longer for reconnection attempts
           await this.redis.del(key);
         }
       }
@@ -234,7 +234,7 @@ export class RedisService {
     }
   }
 
-  // Start scheduled cleanup (run every 5 minutes)
+  // Start scheduled cleanup (run every 15 minutes)
   startScheduledCleanup(): void {
     setInterval(async () => {
       try {
@@ -243,7 +243,7 @@ export class RedisService {
       } catch (error) {
         console.error('❌ Error during scheduled cleanup:', error);
       }
-    }, 300000); // 5 minutes
+    }, 900000); // 15 minutes
   }
 }
 

@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Download, Upload, Trash2, RefreshCw, FileText } from 'lucide-react';
 import { EventTable } from '../components/EventTable';
 import { GlassCard } from '../components/GlassCard';
 import { flushEvents, clearEvents } from '../utils/eventLogger';
 import { EventEntry } from '../types';
 
-interface ClientLogPageProps {
-  onBack: () => void;
-}
-
-export const ClientLogPage: React.FC<ClientLogPageProps> = ({ onBack }) => {
+export const ClientLogPage: React.FC = () => {
+  const navigate = useNavigate();
   const [events, setEvents] = useState<EventEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [uploadedEvents, setUploadedEvents] = useState<EventEntry[]>([]);
@@ -108,7 +106,7 @@ export const ClientLogPage: React.FC<ClientLogPageProps> = ({ onBack }) => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <button
-                onClick={onBack}
+                onClick={() => navigate('/app')}
                 className="p-2 hover:bg-white/20 rounded-lg transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />

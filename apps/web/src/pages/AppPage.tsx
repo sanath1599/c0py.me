@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { LionsDen } from '../components/LionsDen';
 import { ProfileModal } from '../components/ProfileModal';
 import { RoomModal } from '../components/RoomModal';
@@ -28,11 +29,8 @@ const WORLD_OPTIONS = [
 ] as const;
 type WorldType = typeof WORLD_OPTIONS[number]['key'];
 
-interface AppPageProps {
-  onNavigateToLog: () => void;
-}
-
-export const AppPage: React.FC<AppPageProps> = ({ onNavigateToLog }) => {
+export const AppPage: React.FC = () => {
+  const navigate = useNavigate();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -561,7 +559,7 @@ const filteredPeers = React.useMemo(() => {
 
             {/* Logs Button */}
             <button
-              onClick={onNavigateToLog}
+              onClick={() => navigate('/logs')}
               className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
               style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
               onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
@@ -570,6 +568,20 @@ const filteredPeers = React.useMemo(() => {
               <FileText size={16} className="text-orange-700" />
               <span className="text-xs md:text-sm font-medium hidden sm:inline" style={{ color: '#A6521B' }}>
                 Logs
+              </span>
+            </button>
+
+            {/* Admin Button */}
+            <button
+              onClick={() => navigate('/admin')}
+              className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
+              style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
+            >
+              <span className="text-orange-700">⚙️</span>
+              <span className="text-xs md:text-sm font-medium hidden sm:inline" style={{ color: '#A6521B' }}>
+                Admin
               </span>
             </button>
 

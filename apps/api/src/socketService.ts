@@ -29,6 +29,11 @@ export class SocketService {
       // Store socket reference
       this.peerSockets.set(socket.id, socket);
 
+      // Handle connection errors
+      socket.on('error', (error) => {
+        console.error(`❌ Socket error for ${socket.id}:`, error);
+      });
+
       // Handle join room
       socket.on('join-room', async (data: JoinRoomData) => {
         await this.handleJoinRoom(socket, data);
@@ -61,11 +66,11 @@ export class SocketService {
           clearTimeout(this.pingTimeout.get(socket.id)!);
         }
         
-        // Set new timeout (90 seconds - longer than client's 60s ping interval)
+        // Set new timeout (180 seconds - much longer than client's 60s ping interval)
         const timeoutId = setTimeout(() => {
           console.warn(`⚠️ Ping timeout for socket: ${socket.id} - forcing disconnect`);
           socket.disconnect(true);
-        }, 90000);
+        }, 180000);
         
         this.pingTimeout.set(socket.id, timeoutId);
         
@@ -81,6 +86,9 @@ export class SocketService {
       
       console.log(`👥 User ${name} (${userId}) joining room: ${room}`);
 
+      // Check if peer already exists (reconnection)
+      const existingPeer = await redisService.getPeer(userId);
+      
       // Create or update peer
       const peer: Peer = {
         id: userId,
@@ -95,6 +103,11 @@ export class SocketService {
       // Store peer in Redis
       await redisService.addPeer(peer);
       await redisService.addPeerToRoom(room, peer);
+      
+      // If this is a reconnection, notify other peers
+      if (existingPeer && !existingPeer.isOnline) {
+        console.log(`🔄 User ${name} reconnected to room ${room}`);
+      }
 
       // Join socket room
       socket.join(room);
@@ -250,14 +263,14 @@ export class SocketService {
           socket.to(peer.roomId).emit('peer-left', peer.id);
         }
 
-        // Remove peer from Redis after a delay (in case of reconnection)
+        // Remove peer from Redis after a longer delay (in case of reconnection)
         setTimeout(async () => {
           const currentPeer = await redisService.getPeer(peer.id);
           if (currentPeer && !currentPeer.isOnline) {
             await redisService.removePeer(peer.id);
             console.log(`🗑️ Removed offline peer: ${peer.name}`);
           }
-        }, 30000); // 30 seconds delay
+        }, 300000); // 5 minutes delay - much longer for reconnection attempts
 
         console.log(`👋 User ${peer.name} disconnected from room ${peer.roomId}`);
       }

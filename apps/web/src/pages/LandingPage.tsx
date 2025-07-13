@@ -3,20 +3,21 @@
    ------------------------------------------------------------------ */
 
    import React, { useState } from 'react';
-   import { motion } from 'framer-motion';
-   import {
-     ArrowRight,
-     ShieldCheck,
-     UserCheck,
-     Zap,
-     Globe,
-     Key,
-     Sparkles,
-     UploadCloud,
-     Play,
-   } from 'lucide-react';
-   import { GlassCard } from '../components/GlassCard';
-   import { DemoModal } from '../components/DemoModal';
+import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import {
+  ArrowRight,
+  ShieldCheck,
+  UserCheck,
+  Zap,
+  Globe,
+  Key,
+  Sparkles,
+  UploadCloud,
+  Play,
+} from 'lucide-react';
+import { GlassCard } from '../components/GlassCard';
+import { DemoModal } from '../components/DemoModal';
    
    /* ---------------------------- helpers ---------------------------- */
    
@@ -28,12 +29,9 @@
    
    /* ------------------------- component ----------------------------- */
    
-   interface LandingPageProps {
-     onGetStarted: () => void;
-   }
-   
-   export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
-     const [showDemo, setShowDemo] = useState(false);
+   export const LandingPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [showDemo, setShowDemo] = useState(false);
 
      return (
        <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden">
@@ -106,7 +104,7 @@
              {/* CTA Buttons */}
              <motion.div className="flex flex-col sm:flex-row gap-4 justify-center items-center" {...fadeUp(0.85)}>
                <motion.button
-                 onClick={onGetStarted}
+                 onClick={() => navigate('/app')}
                  className="inline-flex items-center gap-3 px-10 py-5 text-lg md:text-xl font-bold rounded-2xl backdrop-blur-xl bg-white/30 ring-1 ring-white/60 shadow-xl transition-transform hover:scale-105 active:scale-95"
                  style={{
                    background:

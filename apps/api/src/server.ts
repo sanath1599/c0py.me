@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:3000",
+  origin: process.env.CLIENT_URL || "http://localhost:5173",
   credentials: true
 }));
 app.use(express.json());
@@ -123,7 +123,7 @@ async function startServer(): Promise<void> {
     
     // Start scheduled cleanup for expired requests
     redisService.startScheduledCleanup();
-    console.log('🧹 Scheduled cleanup started (every 5 minutes)');
+    console.log('🧹 Scheduled cleanup started (every 15 minutes)');
     
     // Start the server
     server.listen(PORT, () => {

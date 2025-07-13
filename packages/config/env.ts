@@ -19,7 +19,7 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
     MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/sharedrop',
     CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
     JWT_SECRET: process.env.JWT_SECRET,
-    CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:4001',
   };
 };
 
