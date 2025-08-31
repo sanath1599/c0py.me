@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 SERVER_HOST="backend.c0py.me"
-SERVER_USER="root"
+SERVER_USER="ubuntu"
 WEBHOOK_PORT="3002"
 REMOTE_DIR="/root/sharedrop"
 
