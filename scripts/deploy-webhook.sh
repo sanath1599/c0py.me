@@ -44,20 +44,25 @@ fi
 
 # Create remote directory
 print_status "Creating remote directory..."
-ssh "$SERVER_USER@$SERVER_HOST" "mkdir -p $REMOTE_DIR/scripts"
+ssh "$SERVER_USER@$SERVER_HOST" "sudo su - -c 'mkdir -p $REMOTE_DIR/scripts'"
 
-# Copy webhook files
+# Copy webhook files to temporary location first
 print_status "Copying webhook files..."
-scp scripts/webhook-handler.js "$SERVER_USER@$SERVER_HOST:$REMOTE_DIR/scripts/"
-scp scripts/setup-webhook.sh "$SERVER_USER@$SERVER_HOST:$REMOTE_DIR/scripts/"
+scp scripts/webhook-handler.js "$SERVER_USER@$SERVER_HOST:/tmp/"
+scp scripts/setup-webhook.sh "$SERVER_USER@$SERVER_HOST:/tmp/"
+
+# Move files to final location with root access
+print_status "Moving files to final location..."
+ssh "$SERVER_USER@$SERVER_HOST" "sudo su - -c 'mv /tmp/webhook-handler.js $REMOTE_DIR/scripts/'"
+ssh "$SERVER_USER@$SERVER_HOST" "sudo su - -c 'mv /tmp/setup-webhook.sh $REMOTE_DIR/scripts/'"
 
 # Make scripts executable
 print_status "Setting up scripts..."
-ssh "$SERVER_USER@$SERVER_HOST" "chmod +x $REMOTE_DIR/scripts/*.sh"
+ssh "$SERVER_USER@$SERVER_HOST" "sudo su - -c 'chmod +x $REMOTE_DIR/scripts/*.sh'"
 
 # Run setup script
 print_status "Running setup script..."
-ssh "$SERVER_USER@$SERVER_HOST" "cd $REMOTE_DIR && ./scripts/setup-webhook.sh"
+ssh "$SERVER_USER@$SERVER_HOST" "sudo su - -c 'cd $REMOTE_DIR && ./scripts/setup-webhook.sh'"
 
 # Test webhook endpoint
 print_status "Testing webhook endpoint..."
@@ -78,6 +83,12 @@ echo "3. Add the webhook secret (shown during setup)"
 echo "4. Select 'Just the push event'"
 echo ""
 echo "🔧 Useful commands:"
+<<<<<<< Current (Your changes)
 echo "  Check service status: ssh $SERVER_USER@$SERVER_HOST 'systemctl status sharedrop-webhook'"
 echo "  View logs: ssh $SERVER_USER@$SERVER_HOST 'journalctl -u sharedrop-webhook -f'"
 echo "  Restart service: ssh $SERVER_USER@$SERVER_HOST 'systemctl restart sharedrop-webhook'" 
+=======
+echo "  Check service status: ssh $SERVER_USER@$SERVER_HOST 'sudo su - -c \"systemctl status sharedrop-webhook\"'"
+echo "  View logs: ssh $SERVER_USER@$SERVER_HOST 'sudo su - -c \"journalctl -u sharedrop-webhook -f\"'"
+echo "  Restart service: ssh $SERVER_USER@$SERVER_HOST 'sudo su - -c \"systemctl restart sharedrop-webhook\"'" 
+>>>>>>> Incoming (Background Agent changes)
