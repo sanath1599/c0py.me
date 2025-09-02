@@ -14,7 +14,7 @@ export class SocketService {
     const config = getEnvironmentConfig();
     this.io = new SocketIOServer(server, {
       cors: {
-        origin: config.CORS_ORIGIN.split(',').map((o: string) => o.trim()), // Support comma-separated origins
+        origin: "*", // Allow all origins
         methods: ["GET", "POST"],
         credentials: true
       },

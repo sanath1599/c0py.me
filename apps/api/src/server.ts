@@ -18,15 +18,10 @@ const config = getEnvironmentConfig();
 const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 4001;
-const allowedOrigins = config.CORS_ORIGIN.split(',').map((o: string) => o.trim());
 
-// Robust CORS middleware for all API endpoints (including /api/logs)
+// CORS middleware allowing all origins
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // allow non-browser requests
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('Not allowed by CORS'), false);
-  },
+  origin: true, // Allow all origins
   credentials: true
 }));
 app.use(express.json());

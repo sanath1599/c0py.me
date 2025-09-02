@@ -21,15 +21,10 @@ const ensureLogsDir = async () => {
 ensureLogsDir().catch(console.error);
 
 const config = getEnvironmentConfig();
-const allowedOrigins = config.CORS_ORIGIN.split(',').map((o: string) => o.trim());
 
-// Robust CORS middleware for all /logs routes
+// CORS middleware allowing all origins for /logs routes
 router.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('Not allowed by CORS'), false);
-  },
+  origin: true, // Allow all origins
   credentials: true
 }));
 
