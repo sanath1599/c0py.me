@@ -149,6 +149,12 @@ export const useSocket = () => {
                    (typeof window !== 'undefined' ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:4001` : 'ws://localhost:4001');
     
     console.log('🔌 Connecting to Socket.IO server:', WS_URL);
+    console.log('🔌 Environment variables:', {
+      VITE_WS_URL: import.meta.env.VITE_WS_URL,
+      VITE_CLIENT_URL: import.meta.env.VITE_CLIENT_URL,
+      NODE_ENV: import.meta.env.NODE_ENV
+    });
+    
     socketRef.current = io(WS_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -158,7 +164,10 @@ export const useSocket = () => {
       timeout: 60000,
       forceNew: false,
       path: '/socket.io/',
-      autoConnect: true
+      autoConnect: true,
+      // Add additional debugging options
+      upgrade: true,
+      rememberUpgrade: false
     });
 
     const socket = socketRef.current;
@@ -191,8 +200,35 @@ export const useSocket = () => {
         message: error.message,
         description: error.description,
         context: error.context,
-        type: error.type
+        type: error.type,
+        stack: error.stack
       });
+      
+      // Check for specific namespace errors
+      if (error.message && error.message.includes('namespace')) {
+        console.error('🚨 Namespace error detected:', error.message);
+        console.error('🔧 Attempting to fix namespace configuration...');
+        
+        // Try reconnecting with corrected configuration
+        setTimeout(() => {
+          if (socketRef.current) {
+            socketRef.current.disconnect();
+            socketRef.current = io(WS_URL, {
+              transports: ['websocket', 'polling'],
+              reconnection: true,
+              reconnectionAttempts: 20,
+              reconnectionDelay: 1000,
+              reconnectionDelayMax: 5000,
+              timeout: 60000,
+              forceNew: true, // Force new connection
+              path: '/socket.io/',
+              autoConnect: true,
+              upgrade: true,
+              rememberUpgrade: false
+            });
+          }
+        }, 2000);
+      }
     });
 
     socket.on('disconnect', (reason) => {

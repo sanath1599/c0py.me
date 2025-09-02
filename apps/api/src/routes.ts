@@ -12,7 +12,12 @@ router.get('/health', (req: Request, res: Response) => {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         redis: redisPing === 'PONG' ? 'connected' : 'disconnected',
-        uptime: process.uptime()
+        uptime: process.uptime(),
+        socketio: {
+          namespace: '/',
+          path: '/socket.io/',
+          transports: ['websocket', 'polling']
+        }
       });
     })
     .catch(error => {
@@ -22,6 +27,24 @@ router.get('/health', (req: Request, res: Response) => {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     });
+});
+
+// Socket.IO specific health check
+router.get('/socketio/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    socketio: {
+      namespace: '/',
+      path: '/socket.io/',
+      transports: ['websocket', 'polling'],
+      cors: {
+        origin: '*',
+        methods: ['GET', 'POST'],
+        credentials: true
+      }
+    }
+  });
 });
 
 // Get all connected peers

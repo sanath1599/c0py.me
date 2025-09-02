@@ -19,7 +19,11 @@ export class SocketService {
         credentials: true
       },
       transports: ['websocket', 'polling'],
-      allowEIO3: true // Allow Engine.IO v3 clients
+      allowEIO3: true, // Allow Engine.IO v3 clients
+      path: '/socket.io/',
+      // Add connection debugging
+      pingTimeout: 60000,
+      pingInterval: 25000
     });
 
     // Handle connection errors
