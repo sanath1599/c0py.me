@@ -147,14 +147,18 @@ export const useSocket = () => {
     const WS_URL = import.meta.env.VITE_WS_URL || 
                    import.meta.env.VITE_CLIENT_URL || 
                    (typeof window !== 'undefined' ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:4001` : 'ws://localhost:4001');
+    
+    console.log('🔌 Connecting to Socket.IO server:', WS_URL);
     socketRef.current = io(WS_URL, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 20,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 60000,
       forceNew: false,
+      path: '/socket.io/',
+      autoConnect: true
     });
 
     const socket = socketRef.current;
@@ -179,6 +183,16 @@ export const useSocket = () => {
       } else {
         setIsUnstable(false);
       }
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket connection error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        description: error.description,
+        context: error.context,
+        type: error.type
+      });
     });
 
     socket.on('disconnect', (reason) => {

@@ -18,7 +18,19 @@ export class SocketService {
         methods: ["GET", "POST"],
         credentials: true
       },
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      allowEIO3: true // Allow Engine.IO v3 clients
+    });
+
+    // Handle connection errors
+    this.io.engine.on('connection_error', (err) => {
+      console.error('❌ Socket.IO connection error:', err);
+      console.error('Error details:', {
+        message: err.message,
+        description: err.description,
+        context: err.context,
+        type: err.type
+      });
     });
 
     this.setupEventHandlers();
@@ -27,6 +39,9 @@ export class SocketService {
   private setupEventHandlers(): void {
     this.io.on('connection', (socket: Socket) => {
       console.log(`🔌 New connection: ${socket.id}`);
+      console.log(`🔌 Connection from: ${socket.handshake.address}`);
+      console.log(`🔌 User agent: ${socket.handshake.headers['user-agent']}`);
+      console.log(`🔌 Origin: ${socket.handshake.headers.origin}`);
       
       // Store socket reference
       this.peerSockets.set(socket.id, socket);
