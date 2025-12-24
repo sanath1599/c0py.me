@@ -203,11 +203,12 @@ export const AppPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transfers]);
 
-  // Toast logic: Only show one toast per completed transfer
+  // Track completed transfers for confetti (but don't show redundant toast - useWebRTC already shows "File received" message)
   useEffect(() => {
     transfers.forEach(transfer => {
       if (transfer.status === 'completed' && !shownTransferToasts.has(transfer.id)) {
-        addToast('success', `File transfer completed!`);
+        // Don't show toast here - useWebRTC already shows "File received: ..." message
+        // Just track for confetti
         setShownTransferToasts(prev => new Set(prev).add(transfer.id));
         // Show confetti for the first completed transfer
         if (!showConfetti) setShowConfetti(true);

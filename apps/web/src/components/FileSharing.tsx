@@ -26,14 +26,10 @@ export const FileSharing: React.FC<FileSharingProps> = ({
 }) => {
   const [showToast, setShowToast] = useState<null | { message: string; type: 'success' | 'error' }>();
 
-  // Show toast on transfer complete or error
+  // Show toast only on transfer error (success is already shown by useWebRTC as "File received: ...")
   useEffect(() => {
-    const completed = transfers.find(t => t.status === 'completed');
     const failed = transfers.find(t => t.status === 'failed');
-    if (completed) {
-      setShowToast({ message: 'File transfer completed!', type: 'success' });
-      setTimeout(() => setShowToast(null), 3000);
-    } else if (failed) {
+    if (failed) {
       setShowToast({ message: 'File transfer failed.', type: 'error' });
       setTimeout(() => setShowToast(null), 3000);
     }
