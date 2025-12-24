@@ -4,6 +4,7 @@ import path from 'path';
 import { v4 as uuid } from 'uuid';
 import cors from 'cors';
 import { getEnvironmentConfig } from '../../../../packages/config/env';
+import logger from '../logger';
 
 const router: express.Router = express.Router();
 
@@ -18,7 +19,7 @@ const ensureLogsDir = async () => {
 };
 
 // Initialize logs directory on startup
-ensureLogsDir().catch(console.error);
+ensureLogsDir().catch((error) => logger.error('Failed to ensure logs directory', { error }));
 
 const config = getEnvironmentConfig();
 
@@ -92,7 +93,7 @@ router.post('/upload', async (req: Request, res: Response) => {
           break;
         }
       } catch (error) {
-        console.warn(`Failed to read log file ${file}:`, error);
+        logger.warn(`Failed to read log file ${file}`, { error, file });
         continue;
       }
     }
@@ -126,7 +127,12 @@ router.post('/upload', async (req: Request, res: Response) => {
       filepath = existingFilePath;
       
       await fs.writeFile(filepath, JSON.stringify(updatedLogEntry, null, 2));
-      console.log(`📊 Log updated: ${logId} (${mergedLogs.length} total events, +${newLogs.length} new) from session ${sessionId}`);
+      logger.info(`Log updated: ${logId}`, { 
+        logId, 
+        totalEvents: mergedLogs.length, 
+        newEvents: newLogs.length, 
+        sessionId 
+      });
       
       res.status(200).json({
         success: true,
@@ -159,7 +165,7 @@ router.post('/upload', async (req: Request, res: Response) => {
       filepath = path.join(LOGS_DIR, filename);
       
       await fs.writeFile(filepath, JSON.stringify(logEntry, null, 2));
-      console.log(`📊 Log uploaded: ${logId} (${logs.length} events) from session ${sessionId}`);
+      logger.info(`Log uploaded: ${logId}`, { logId, eventCount: logs.length, sessionId });
       
       res.status(200).json({
         success: true,
@@ -173,7 +179,7 @@ router.post('/upload', async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('Failed to upload logs:', error);
+    logger.error('Failed to upload logs', { error });
     res.status(500).json({
       error: 'Failed to upload logs',
       message: error instanceof Error ? error.message : 'Unknown error'
@@ -207,7 +213,7 @@ router.get('/', async (req: Request, res: Response) => {
         
         logs.push(logEntry);
       } catch (error) {
-        console.warn(`Failed to read log file ${file}:`, error);
+        logger.warn(`Failed to read log file ${file}`, { error, file });
         continue;
       }
     }
@@ -223,7 +229,7 @@ router.get('/', async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Failed to fetch logs:', error);
+    logger.error('Failed to fetch logs', { error });
     res.status(500).json({
       error: 'Failed to fetch logs',
       message: error instanceof Error ? error.message : 'Unknown error'
@@ -250,7 +256,7 @@ router.get('/:logId', (req: Request, res: Response) => {
             return logEntry;
           }
         } catch (error) {
-          console.warn(`Failed to read log file ${file}:`, error);
+          logger.warn(`Failed to read log file ${file}`, { error, file });
         }
         return null;
       });
@@ -273,7 +279,7 @@ router.get('/:logId', (req: Request, res: Response) => {
       }
     })
     .catch(error => {
-      console.error('Failed to fetch log:', error);
+      logger.error('Failed to fetch log', { error, logId });
       res.status(500).json({
         error: 'Failed to fetch log',
         message: error instanceof Error ? error.message : 'Unknown error'
@@ -298,11 +304,11 @@ router.delete('/:logId', (req: Request, res: Response) => {
           
           if (logEntry.id === logId) {
             await fs.unlink(filepath);
-            console.log(`🗑️ Log deleted: ${logId}`);
+            logger.info(`Log deleted: ${logId}`, { logId });
             return true;
           }
         } catch (error) {
-          console.warn(`Failed to read log file ${file}:`, error);
+          logger.warn(`Failed to read log file ${file}`, { error, file });
         }
         return false;
       });
@@ -326,7 +332,7 @@ router.delete('/:logId', (req: Request, res: Response) => {
       }
     })
     .catch(error => {
-      console.error('Failed to delete log:', error);
+      logger.error('Failed to delete log', { error, logId });
       res.status(500).json({
         error: 'Failed to delete log',
         message: error instanceof Error ? error.message : 'Unknown error'
@@ -379,7 +385,7 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
         }
         
       } catch (error) {
-        console.warn(`Failed to read log file ${file}:`, error);
+        logger.warn(`Failed to read log file ${file}`, { error, file });
         continue;
       }
     }
@@ -401,7 +407,7 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Failed to get logs summary:', error);
+    logger.error('Failed to get logs summary', { error });
     res.status(500).json({
       error: 'Failed to get logs summary',
       message: error instanceof Error ? error.message : 'Unknown error'

@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import redisService, { PendingRequest } from './redis';
 import logsRouter from './routes/logs';
+import logger from './logger';
 
 const router: express.Router = express.Router();
 
@@ -216,7 +217,7 @@ router.post('/file-transfer/request', (req: Request, res: Response) => {
 
   redisService.storePendingRequest(request)
     .then(() => {
-      console.log(`💾 Stored file transfer request ${requestId} from ${senderId} to ${receiverId}`);
+      logger.info(`Stored file transfer request ${requestId}`, { requestId, senderId, receiverId });
       res.status(200).json({
         success: true,
         requestId,
@@ -224,7 +225,7 @@ router.post('/file-transfer/request', (req: Request, res: Response) => {
       });
     })
     .catch(error => {
-      console.error('❌ Error storing file transfer request:', error);
+      logger.error('Error storing file transfer request', { error, senderId, receiverId });
       res.status(500).json({ error: 'Failed to store file transfer request' });
     });
 });
@@ -247,7 +248,7 @@ router.get('/file-transfer/pending/:receiverId', (req: Request, res: Response) =
       });
     })
     .catch(error => {
-      console.error('❌ Error retrieving pending file transfer requests:', error);
+      logger.error('Error retrieving pending file transfer requests', { error, receiverId });
       res.status(500).json({ error: 'Failed to retrieve pending requests' });
     });
 });
@@ -269,7 +270,7 @@ router.delete('/file-transfer/request/:requestId', (req: Request, res: Response)
       });
     })
     .catch(error => {
-      console.error('❌ Error removing file transfer request:', error);
+      logger.error('Error removing file transfer request', { error, requestId, receiverId });
       res.status(500).json({ error: 'Failed to remove request' });
     });
 });
@@ -298,7 +299,7 @@ router.post('/webrtc/signal', (req: Request, res: Response) => {
 
   redisService.storePendingRequest(request)
     .then(() => {
-      console.log(`💾 Stored WebRTC signal ${requestId} from ${senderId} to ${receiverId}`);
+      logger.info(`Stored WebRTC signal ${requestId}`, { requestId, senderId, receiverId });
       res.status(200).json({
         success: true,
         requestId,
@@ -306,7 +307,7 @@ router.post('/webrtc/signal', (req: Request, res: Response) => {
       });
     })
     .catch(error => {
-      console.error('❌ Error storing WebRTC signal:', error);
+      logger.error('Error storing WebRTC signal', { error, senderId, receiverId });
       res.status(500).json({ error: 'Failed to store WebRTC signal' });
     });
 });
@@ -329,7 +330,7 @@ router.get('/webrtc/pending/:receiverId', (req: Request, res: Response) => {
       });
     })
     .catch(error => {
-      console.error('❌ Error retrieving pending WebRTC signals:', error);
+      logger.error('Error retrieving pending WebRTC signals', { error, receiverId });
       res.status(500).json({ error: 'Failed to retrieve pending signals' });
     });
 });

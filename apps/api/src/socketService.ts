@@ -3,6 +3,7 @@ import { Server as HTTPServer } from 'http';
 import { Peer, JoinRoomData, UpdateProfileData, SignalMessage } from './types';
 import redisService, { PendingRequest } from './redis';
 import { getEnvironmentConfig } from '../../../packages/config/env';
+import logger from './logger';
 
 export class SocketService {
   private io: SocketIOServer;
@@ -32,8 +33,7 @@ export class SocketService {
 
     // Handle connection errors
     this.io.engine.on('connection_error', (err) => {
-      console.error('❌ Socket.IO connection error:', err);
-      console.error('Error details:', {
+      logger.error('Socket.IO connection error', {
         message: err.message,
         description: err.description,
         context: err.context,
@@ -46,17 +46,18 @@ export class SocketService {
 
   private setupEventHandlers(): void {
     this.io.on('connection', (socket: Socket) => {
-      console.log(`🔌 New connection: ${socket.id}`);
-      console.log(`🔌 Connection from: ${socket.handshake.address}`);
-      console.log(`🔌 User agent: ${socket.handshake.headers['user-agent']}`);
-      console.log(`🔌 Origin: ${socket.handshake.headers.origin}`);
+      logger.info(`New connection: ${socket.id}`, {
+        address: socket.handshake.address,
+        userAgent: socket.handshake.headers['user-agent'],
+        origin: socket.handshake.headers.origin
+      });
       
       // Store socket reference
       this.peerSockets.set(socket.id, socket);
 
       // Handle connection errors
       socket.on('error', (error) => {
-        console.error(`❌ Socket error for ${socket.id}:`, error);
+        logger.error(`Socket error for ${socket.id}`, { error });
       });
 
       // Handle join room
@@ -76,7 +77,7 @@ export class SocketService {
 
       // Handle disconnection
       socket.on('disconnect', async (reason) => {
-        console.log(`🔌 Socket ${socket.id} disconnecting. Reason: ${reason}`);
+        logger.debug(`Socket ${socket.id} disconnecting. Reason: ${reason}`);
         await this.handleDisconnect(socket);
       });
 
@@ -90,7 +91,7 @@ export class SocketService {
     try {
       const { room, userId, name, color, emoji } = data;
       
-      console.log(`👥 User ${name} (${userId}) joining room: ${room}`);
+      logger.info(`User ${name} (${userId}) joining room: ${room}`);
 
       // Check if peer already exists (reconnection)
       const existingPeer = await redisService.getPeer(userId);
@@ -112,7 +113,7 @@ export class SocketService {
       
       // If this is a reconnection, notify other peers
       if (existingPeer && !existingPeer.isOnline) {
-        console.log(`🔄 User ${name} reconnected to room ${room}`);
+        logger.info(`User ${name} reconnected to room ${room}`);
         // Emit peer-joined event to notify other peers that peer is back online
         socket.to(room).emit('peer-joined', peer);
       }
@@ -132,9 +133,9 @@ export class SocketService {
       // Notify other peers in the room
       socket.to(room).emit('peer-joined', peer);
 
-      console.log(`✅ User ${name} joined room ${room}. Total peers: ${roomPeers.length}`);
+      logger.info(`User ${name} joined room ${room}. Total peers: ${roomPeers.length}`);
     } catch (error) {
-      console.error('❌ Error handling join room:', error);
+      logger.error('Error handling join room', { error, userId: data?.userId, room: data?.room, socketId: socket.id });
       socket.emit('error', { message: 'Failed to join room' });
     }
   }
@@ -148,7 +149,7 @@ export class SocketService {
       const peer = allPeers.find(p => p.socketId === socket.id);
       
       if (!peer) {
-        console.warn(`⚠️ Peer not found for socket: ${socket.id}`);
+        logger.warn(`Peer not found for socket: ${socket.id}`);
         return;
       }
 
@@ -167,9 +168,9 @@ export class SocketService {
         socket.to(peer.roomId).emit('peer-joined', updatedPeer);
       }
 
-      console.log(`🔄 Profile updated for ${name}`);
+      logger.debug(`Profile updated for ${name}`);
     } catch (error) {
-      console.error('❌ Error handling profile update:', error);
+      logger.error('Error handling profile update', { error, socketId: socket.id });
     }
   }
 
@@ -188,18 +189,18 @@ export class SocketService {
         if (targetSocket) {
           // Forward the signal to the target peer
           targetSocket.emit('signal', { from, data: signalData });
-          console.log(`📡 Signal forwarded from ${from} to ${to} (socket: ${targetPeer.socketId})`);
+          logger.debug(`Signal forwarded from ${from} to ${to}`, { socketId: targetPeer.socketId });
         } else {
-          console.warn(`⚠️ Target peer ${to} socket not found for signal from ${from}`);
+          logger.warn(`Target peer ${to} socket not found for signal from ${from}`);
           await this.storePendingSignal(from, to, signalData);
         }
       } else {
         // Target peer is offline, store the signal as pending request
-        console.log(`📦 Target peer ${to} is offline, storing signal as pending request`);
+        logger.debug(`Target peer ${to} is offline, storing signal as pending request`);
         await this.storePendingSignal(from, to, signalData);
       }
     } catch (error) {
-      console.error('❌ Error handling signal:', error);
+      logger.error('Error handling signal', { error, from: data?.from, to: data?.to, socketId: socket.id });
     }
   }
 
@@ -223,7 +224,7 @@ export class SocketService {
       const pendingRequests = await redisService.getReceiverPendingRequests(userId);
       
       if (pendingRequests.length > 0) {
-        console.log(`📦 Delivering ${pendingRequests.length} pending requests to ${userId}`);
+        logger.info(`Delivering ${pendingRequests.length} pending requests to ${userId}`);
         
         for (const request of pendingRequests) {
           if (request.requestType === 'webrtc-signal') {
@@ -232,14 +233,14 @@ export class SocketService {
               from: request.senderId, 
               data: request.data 
             });
-            console.log(`📡 Delivered pending signal from ${request.senderId} to ${userId}`);
+            logger.debug(`Delivered pending signal from ${request.senderId} to ${userId}`);
           } else if (request.requestType === 'file-transfer') {
             // Deliver file transfer request
             socket.emit('file-transfer-request', {
               from: request.senderId,
               ...request.data
             });
-            console.log(`📁 Delivered pending file transfer request from ${request.senderId} to ${userId}`);
+            logger.debug(`Delivered pending file transfer request from ${request.senderId} to ${userId}`);
           }
           
           // Remove the delivered request
@@ -247,13 +248,13 @@ export class SocketService {
         }
       }
     } catch (error) {
-      console.error('❌ Error delivering pending requests:', error);
+      logger.error('Error delivering pending requests', { error, userId });
     }
   }
 
   private async handleDisconnect(socket: Socket): Promise<void> {
     try {
-      console.log(`🔌 Disconnection: ${socket.id}`);
+      logger.debug(`Disconnection: ${socket.id}`);
 
       // Find the peer by socket ID
       const allPeers = await redisService.getAllPeers();
@@ -276,17 +277,17 @@ export class SocketService {
           const currentPeer = await redisService.getPeer(peer.id);
           if (currentPeer && !currentPeer.isOnline) {
             await redisService.removePeer(peer.id);
-            console.log(`🗑️ Removed offline peer: ${peer.name}`);
+            logger.debug(`Removed offline peer: ${peer.name}`);
           }
         }, 300000); // 5 minutes delay - much longer for reconnection attempts
 
-        console.log(`👋 User ${peer.name} disconnected from room ${peer.roomId}`);
+        logger.info(`User ${peer.name} disconnected from room ${peer.roomId}`);
       }
 
       // Remove socket reference
       this.peerSockets.delete(socket.id);
     } catch (error) {
-      console.error('❌ Error handling disconnect:', error);
+      logger.error('Error handling disconnect', { error, socketId: socket.id });
     }
   }
 

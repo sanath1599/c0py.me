@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 import { Peer, RedisPeer } from './types';
+import logger from './logger';
 
 const redis = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
@@ -8,11 +9,11 @@ const redis = new Redis({
 });
 
 redis.on('error', (err) => {
-  console.error('Redis connection error:', err);
+  logger.error('Redis connection error', { error: err });
 });
 
 redis.on('connect', () => {
-  console.log('✅ Connected to Redis');
+  logger.info('Connected to Redis');
 });
 
 export interface PendingRequest {
@@ -163,7 +164,11 @@ export class RedisService {
     await this.redis.sadd(receiverKey, request.requestId);
     await this.redis.expire(receiverKey, 300); // 5 minutes TTL
     
-    console.log(`💾 Stored pending request ${request.requestId} for receiver ${request.receiverId}`);
+    logger.debug(`Stored pending request ${request.requestId}`, { 
+      requestId: request.requestId, 
+      receiverId: request.receiverId,
+      requestType: request.requestType
+    });
   }
 
   async getPendingRequest(requestId: string): Promise<PendingRequest | null> {
@@ -177,7 +182,7 @@ export class RedisService {
     try {
       return JSON.parse(data);
     } catch (error) {
-      console.error('❌ Error parsing pending request:', error);
+      logger.error('Error parsing pending request', { error, requestId });
       return null;
     }
   }
@@ -206,7 +211,7 @@ export class RedisService {
       await this.redis.srem(receiverKey, requestId);
     }
     
-    console.log(`🗑️ Removed pending request ${requestId}`);
+    logger.debug(`Removed pending request ${requestId}`, { requestId, receiverId });
   }
 
   // Cleanup expired requests
@@ -239,9 +244,9 @@ export class RedisService {
     setInterval(async () => {
       try {
         await this.cleanupExpiredRequests();
-        console.log('🧹 Scheduled cleanup completed');
+        logger.debug('Scheduled cleanup completed');
       } catch (error) {
-        console.error('❌ Error during scheduled cleanup:', error);
+        logger.error('Error during scheduled cleanup', { error });
       }
     }, 900000); // 15 minutes
   }
