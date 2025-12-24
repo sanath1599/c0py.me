@@ -40,10 +40,6 @@ export const AdminDashboard: React.FC = () => {
   const [sortBy, setSortBy] = useState<'uploadedAt' | 'eventCount' | 'sessionId'>('uploadedAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  useEffect(() => {
-    loadUploadedLogs();
-  }, []);
-
   const loadUploadedLogs = async () => {
     try {
       setLoading(true);
@@ -62,6 +58,22 @@ export const AdminDashboard: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Check authentication and load logs
+  useEffect(() => {
+    const isAuthenticated = sessionStorage.getItem('admin_authenticated') === 'true';
+    if (!isAuthenticated) {
+      navigate('/admin/login');
+      return;
+    }
+    loadUploadedLogs();
+  }, [navigate]);
+  
+  const isAuthenticated = sessionStorage.getItem('admin_authenticated') === 'true';
+  
+  if (!isAuthenticated) {
+    return null; // Will redirect to login
+  }
 
   const calculateStats = (logData: UploadedLog[]) => {
     const deviceTypes = new Map<string, number>();

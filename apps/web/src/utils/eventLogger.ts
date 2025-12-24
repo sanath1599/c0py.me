@@ -101,6 +101,8 @@ export const logUserAction = {
       world,
       category: 'navigation'
     });
+    // Auto-upload logs on room change
+    scheduleAutoUpload();
   },
   
   roomCreated: (roomId: string, world: string) => {
@@ -147,6 +149,8 @@ export const logUserAction = {
       totalSize,
       category: 'file_operation'
     });
+    // Auto-upload logs on transfer initiated
+    scheduleAutoUpload();
   },
   
   transferCancelled: (transferId: string, reason?: string) => {
@@ -291,6 +295,8 @@ export const logSystemEvent = {
       averageSpeed,
       category: 'transfer'
     });
+    // Auto-upload logs on transfer completed
+    scheduleAutoUpload();
   },
   
   transferFailed: (transferId: string, reason: string, duration: number) => {
@@ -336,6 +342,8 @@ export const logSystemEvent = {
       fileSize,
       category: 'transfer'
     });
+    // Auto-upload logs on file received (incoming file)
+    scheduleAutoUpload();
   },
 
   // Multi-step system process logging
@@ -398,6 +406,39 @@ export async function uploadLogsToBackend(): Promise<{ success: boolean; logId?:
       error: error instanceof Error ? error.message : 'Unknown error occurred'
     };
   }
+}
+
+// Automatic upload on key events - called after specific events occur
+let autoUploadScheduled = false;
+let autoUploadTimeout: NodeJS.Timeout | null = null;
+
+function scheduleAutoUpload() {
+  // Debounce uploads - wait 2 seconds after last event before uploading
+  if (autoUploadTimeout) {
+    clearTimeout(autoUploadTimeout);
+  }
+  
+  autoUploadTimeout = setTimeout(async () => {
+    if (autoUploadScheduled) return;
+    autoUploadScheduled = true;
+    
+    try {
+      const logs = flushEvents();
+      if (logs.length > 0) {
+        await logUploadService.uploadLogs(logs, sessionId);
+        console.log('📤 Logs automatically uploaded');
+      }
+    } catch (error) {
+      console.error('Failed to auto-upload logs:', error);
+    } finally {
+      autoUploadScheduled = false;
+    }
+  }, 2000); // Wait 2 seconds after event before uploading
+}
+
+// Export function to trigger auto-upload
+export function triggerAutoUpload() {
+  scheduleAutoUpload();
 }
 
 // Get uploaded logs from backend

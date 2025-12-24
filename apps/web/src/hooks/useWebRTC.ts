@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { FileTransfer, Peer } from '../types';
 import { formatFileSize } from '../utils/format';
 import { playChime, playSuccessSound } from '../utils/sound';
-import { logSystemEvent } from '../utils/eventLogger';
+import { logSystemEvent, logUserAction } from '../utils/eventLogger';
 
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -486,6 +486,9 @@ export const useWebRTC = (
                 const message = JSON.parse(event.data);
                 if (message.type === 'file-request') {
                   console.log('📥 Incoming file request:', message);
+                  
+                  // Log incoming file event (triggers auto-upload)
+                  logSystemEvent.fileReceived(message.fileType, message.fileSize);
                   
                   // Add to incoming files list
                   const incomingFileId = `incoming-${Date.now()}-${Math.random()}`;

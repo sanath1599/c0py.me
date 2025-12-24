@@ -4,6 +4,7 @@ import { LandingPage } from './pages/LandingPage';
 import { AppPage } from './pages/AppPage';
 import { ClientLogPage } from './pages/ClientLogPage';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { AdminLogin } from './pages/AdminLogin';
 import { initAnalytics, trackPageView } from './utils/analytics';
 
 // Component to track page views
@@ -21,6 +22,9 @@ const PageTracker: React.FC = () => {
         break;
       case '/admin':
         trackPageView('c0py.me - Admin Dashboard');
+        break;
+      case '/admin/login':
+        trackPageView('c0py.me - Admin Login');
         break;
       case '/logs':
         trackPageView('c0py.me - Client Event Log');
@@ -45,6 +49,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/app" element={<AppPage />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/logs" element={<ClientLogPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
