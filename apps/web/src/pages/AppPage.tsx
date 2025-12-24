@@ -14,7 +14,7 @@ import { generateRandomUsername } from '../utils/names';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
-import { Globe, Lock, Wifi, Play, FileText } from 'lucide-react';
+import { Globe, Lock, Wifi, Play, FileText, Github, Star } from 'lucide-react';
 import { logUserAction, logSystemEvent } from '../utils/eventLogger';
 
 import { DemoModal } from '../components/DemoModal';
@@ -571,6 +571,23 @@ const filteredPeers = React.useMemo(() => {
                 Logs
               </span>
             </button>
+
+            {/* GitHub Button */}
+            <a
+              href="https://github.com/sanath1599/c0py.me"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
+              style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
+            >
+              <Github size={16} className="text-orange-700" />
+              <Star size={14} className="text-orange-700 fill-orange-700" />
+              <span className="text-xs md:text-sm font-medium hidden sm:inline" style={{ color: '#A6521B' }}>
+                Star us
+              </span>
+            </a>
 
             {/* Admin button removed - access via /admin/login */}
 
