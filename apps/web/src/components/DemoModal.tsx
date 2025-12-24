@@ -48,7 +48,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose }) => {
           {/* Video Container */}
           <div className="flex-1 relative">
             <iframe
-              src="https://www.youtube.com/embed/bC7uP2NqT10?autoplay=1&rel=0&modestbranding=1&showinfo=0"
+              src="https://www.youtube.com/watch?v=kf1zqB7TmNM"
               title="c0py.me Demo Video"
               className="w-full h-full"
               frameBorder="0"
