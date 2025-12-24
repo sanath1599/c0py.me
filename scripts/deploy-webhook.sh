@@ -83,12 +83,6 @@ echo "3. Add the webhook secret (shown during setup)"
 echo "4. Select 'Just the push event'"
 echo ""
 echo "🔧 Useful commands:"
-<<<<<<< Current (Your changes)
-echo "  Check service status: ssh $SERVER_USER@$SERVER_HOST 'systemctl status sharedrop-webhook'"
-echo "  View logs: ssh $SERVER_USER@$SERVER_HOST 'journalctl -u sharedrop-webhook -f'"
-echo "  Restart service: ssh $SERVER_USER@$SERVER_HOST 'systemctl restart sharedrop-webhook'" 
-=======
 echo "  Check service status: ssh $SERVER_USER@$SERVER_HOST 'sudo su - -c \"systemctl status sharedrop-webhook\"'"
 echo "  View logs: ssh $SERVER_USER@$SERVER_HOST 'sudo su - -c \"journalctl -u sharedrop-webhook -f\"'"
 echo "  Restart service: ssh $SERVER_USER@$SERVER_HOST 'sudo su - -c \"systemctl restart sharedrop-webhook\"'" 
->>>>>>> Incoming (Background Agent changes)

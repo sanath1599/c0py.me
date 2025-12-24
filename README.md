@@ -423,7 +423,7 @@ docker run -p 3001:3001 c0py-me
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Please see our [Contributing Guide](docs/CONTRIBUTING.md) for details.
 
 ### Development Setup
 1. Fork the repository
@@ -443,13 +443,24 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](docs/) directory:
+
+- **[Documentation Index](docs/README.md)** - Complete documentation overview
+- **[Architecture](docs/architecture/ARCHITECTURE.md)** - System architecture and design
+- **[API Documentation](docs/API.md)** - API endpoints and WebSocket events
+- **[Deployment Guide](docs/deployment/DEPLOYMENT.md)** - Production deployment instructions
+- **[Contributing Guide](docs/CONTRIBUTING.md)** - How to contribute to the project
+- **[Development Instructions](docs/development/instructions.md)** - Development setup and guidelines
+
 ## Support
 
 - **Live Website**: [https://c0py.me/](https://c0py.me/)
 - **Demo Video**: [Watch on YouTube](https://www.youtube.com/watch?v=kf1zqB7TmNM)
-- **Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical docs
-- **Issues**: Report bugs and feature requests on GitHub
-- **Discussions**: Join community discussions on GitHub
+- **Documentation**: See [docs/](docs/) for comprehensive documentation
+- **Issues**: Report bugs and feature requests on [GitHub](https://github.com/sanath1599/c0py.me/issues)
+- **Discussions**: Join community discussions on [GitHub](https://github.com/sanath1599/c0py.me/discussions)
 
 ## Acknowledgments
 
