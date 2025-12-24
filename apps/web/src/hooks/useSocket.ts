@@ -264,30 +264,38 @@ export const useSocket = () => {
     socket.on('peers', (peerList: Peer[]) => {
       console.log('📡 Received peers:', peerList.length);
       // Ensure each peer has random properties if they don't exist
+      // Preserve isOnline status from server
       const peersWithRandomProps = peerList.map(peer => ({
         ...peer,
         name: peer.name || generateRandomUsername(),
         emoji: peer.emoji || getRandomEmoji(),
-        color: peer.color || getRandomColor()
+        color: peer.color || getRandomColor(),
+        isOnline: peer.isOnline !== undefined ? peer.isOnline : true // Default to online if not specified
       }));
+      console.log('📡 Peers with status:', peersWithRandomProps.map(p => ({ name: p.name, isOnline: p.isOnline })));
       setPeers(peersWithRandomProps);
     });
 
     socket.on('peer-joined', (peer: Peer) => {
-      console.log('👥 Peer joined:', peer.name);
-      // Ensure the peer has random properties
+      console.log('👥 Peer joined:', peer.name, 'isOnline:', peer.isOnline);
+      // Ensure the peer has random properties and is marked as online
       const peerWithRandomProps = {
         ...peer,
         name: peer.name || generateRandomUsername(),
         emoji: peer.emoji || getRandomEmoji(),
-        color: peer.color || getRandomColor()
+        color: peer.color || getRandomColor(),
+        isOnline: true // Always mark as online when peer-joined event is received
       };
       setPeers(prev => [...prev.filter(p => p.id !== peer.id), peerWithRandomProps]);
     });
 
     socket.on('peer-left', (peerId: string) => {
       console.log('👋 Peer left:', peerId);
-      setPeers(prev => prev.filter(p => p.id !== peerId));
+      // Mark peer as offline instead of removing them
+      // This allows them to show as offline but still be in the list
+      setPeers(prev => prev.map(p => 
+        p.id === peerId ? { ...p, isOnline: false } : p
+      ));
     });
 
     return () => {

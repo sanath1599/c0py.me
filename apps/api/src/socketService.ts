@@ -113,6 +113,8 @@ export class SocketService {
       // If this is a reconnection, notify other peers
       if (existingPeer && !existingPeer.isOnline) {
         console.log(`🔄 User ${name} reconnected to room ${room}`);
+        // Emit peer-joined event to notify other peers that peer is back online
+        socket.to(room).emit('peer-joined', peer);
       }
 
       // Join socket room

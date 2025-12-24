@@ -198,48 +198,29 @@ export const useWebRTC = (
     }
 
     try {
-      // Reuse existing connection if available and healthy, otherwise create new one
-      logSystemEvent.systemProcessStep(processName, 'checking_connection', {
+      // Always create a new connection for each transfer for reliability
+      // This ensures clean state and avoids connection reuse issues
+      console.log(`🆕 Creating new WebRTC connection for transfer to ${peer.id}`);
+      logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
         transferId,
         peerId: peer.id
       });
       
-      let pc = connections.get(peer.id);
-      
-      // Check if existing connection is usable
-      if (pc) {
-        const state = pc.connectionState;
-        if (state === 'connected' || state === 'connecting') {
-          console.log(`♻️ Reusing existing WebRTC connection with ${peer.id} (state: ${state})`);
-          logSystemEvent.systemProcessStep(processName, 'reusing_connection', {
-            transferId,
-            peerId: peer.id,
-            connectionState: state
-          });
-        } else if (state === 'closed' || state === 'failed') {
-          console.log(`🔄 Existing connection ${state}, creating new one`);
-          logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
-            transferId,
-            peerId: peer.id
-          });
-          pc = createPeerConnection(peer.id);
-        } else {
-          // disconnected or other states - try to reuse but create new if needed
-          console.log(`⚠️ Existing connection in ${state} state, creating new one for reliability`);
-          logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
-            transferId,
-            peerId: peer.id
-          });
-          pc = createPeerConnection(peer.id);
+      // Close and remove any existing connection for this peer to avoid conflicts
+      const existingPc = connections.get(peer.id);
+      if (existingPc) {
+        console.log(`🔄 Closing existing connection for ${peer.id} before creating new one`);
+        try {
+          existingPc.close();
+        } catch (error) {
+          console.warn('⚠️ Error closing existing connection:', error);
         }
-      } else {
-        console.log(`🆕 Creating new WebRTC connection with ${peer.id}`);
-        logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
-          transferId,
-          peerId: peer.id
-        });
-        pc = createPeerConnection(peer.id);
+        removeConnection(peer.id);
       }
+      
+      // Create new connection
+      const pc = createPeerConnection(peer.id);
+      const isNewConnection = true;
       
       // Create data channel
       logSystemEvent.systemProcessStep(processName, 'creating_data_channel', {
@@ -332,16 +313,17 @@ export const useWebRTC = (
           peerId: peer.id
         });
         
-        // Remove from data channels ref
-        dataChannelsRef.current.delete(peer.id);
-        
-        // Don't remove the WebRTC connection immediately - it might be reused
-        // Only remove if the connection state is actually failed/closed
-        // The connection state change handler will handle cleanup if needed
+        // Remove from data channels ref (but keep connection for other channels)
+        // Don't delete by peer.id as there might be multiple channels
+        // Instead, track channels by transferId or use a different key
         console.log('ℹ️ Data channel closed - WebRTC connection may still be usable for future transfers');
       };
-      dataChannelsRef.current.set(peer.id, dataChannel);
-      // Create offer
+      
+      // Store data channel with a unique key (peer.id + transferId) to allow multiple channels
+      const channelKey = `${peer.id}-${transferId}`;
+      dataChannelsRef.current.set(channelKey, dataChannel);
+      
+      // Always create offer for new connection
       console.log(`📤 Creating offer for ${peer.id}`);
       
       logSystemEvent.systemProcessStep(processName, 'creating_offer', {
@@ -468,13 +450,18 @@ export const useWebRTC = (
       console.log(`📡 Processing offer from ${from}`);
       if (!pc) {
         pc = createPeerConnection(from);
-        
-        // Set up data channel for receiving
+      }
+      
+      // Set up data channel handler (if not already set up)
+      // This handler will receive data channels created by the other peer
+      // We need to set this up even if connection exists, to handle bidirectional transfers
+      if (!pc.ondatachannel) {
         pc.ondatachannel = (event) => {
           const dataChannel = event.channel;
           console.log('📥 Data channel opened for receiving');
           
           // Store the data channel for accept/reject operations
+          // Use peer.id as key for backward compatibility with accept/reject functions
           dataChannelsRef.current.set(from, dataChannel);
           
           dataChannel.onmessage = (event) => {
