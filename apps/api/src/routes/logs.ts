@@ -50,12 +50,12 @@ interface StoredLogEntry {
   logs: any[];
   metadata: any;
   uploadedAt: string;
-  ipAddress?: string;
+  lastUpdatedAt: string;
   userAgent?: string;
 }
 
 // Upload logs with device information
-router.post('/upload', (req: Request, res: Response) => {
+router.post('/upload', async (req: Request, res: Response) => {
   const payload: LogUploadPayload = req.body;
   const { sessionId, deviceInfo, logs, metadata } = payload;
   
@@ -66,31 +66,99 @@ router.post('/upload', (req: Request, res: Response) => {
     return;
   }
 
-  const logId = uuid();
-  const uploadedAt = new Date().toISOString();
-  
-  // Extract additional information from request
-  const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] as string;
-  const userAgent = req.headers['user-agent'];
-  
-  const logEntry: StoredLogEntry = {
-    id: logId,
-    sessionId,
-    deviceInfo,
-    logs,
-    metadata,
-    uploadedAt,
-    ipAddress,
-    userAgent,
-  };
-
-  // Save to JSON file
-  const filename = `log_${logId}_${Date.now()}.json`;
-  const filepath = path.join(LOGS_DIR, filename);
-  
-  ensureLogsDir()
-    .then(() => fs.writeFile(filepath, JSON.stringify(logEntry, null, 2)))
-    .then(() => {
+  try {
+    await ensureLogsDir();
+    
+    // Extract additional information from request (no IP address for privacy)
+    const userAgent = req.headers['user-agent'];
+    const now = new Date().toISOString();
+    
+    // Check if log entry with this sessionId already exists
+    const files = await fs.readdir(LOGS_DIR);
+    const jsonFiles = files.filter(file => file.endsWith('.json'));
+    
+    let existingLog: StoredLogEntry | null = null;
+    let existingFilePath: string | null = null;
+    
+    for (const file of jsonFiles) {
+      try {
+        const filepath = path.join(LOGS_DIR, file);
+        const content = await fs.readFile(filepath, 'utf-8');
+        const logEntry: StoredLogEntry = JSON.parse(content);
+        
+        if (logEntry.sessionId === sessionId) {
+          existingLog = logEntry;
+          existingFilePath = filepath;
+          break;
+        }
+      } catch (error) {
+        console.warn(`Failed to read log file ${file}:`, error);
+        continue;
+      }
+    }
+    
+    let logId: string;
+    let uploadedAt: string;
+    let filename: string;
+    let filepath: string;
+    
+    if (existingLog && existingFilePath) {
+      // Update existing log entry
+      logId = existingLog.id;
+      uploadedAt = existingLog.uploadedAt; // Keep original upload time
+      
+      // Merge logs (append new logs, avoiding duplicates by timestamp)
+      const existingLogTimestamps = new Set(existingLog.logs.map((log: any) => log.timestamp));
+      const newLogs = logs.filter((log: any) => !existingLogTimestamps.has(log.timestamp));
+      const mergedLogs = [...existingLog.logs, ...newLogs];
+      
+      // Update log entry
+      const updatedLogEntry: StoredLogEntry = {
+        ...existingLog,
+        deviceInfo, // Update device info with latest
+        logs: mergedLogs,
+        metadata, // Update metadata
+        lastUpdatedAt: now,
+        userAgent: userAgent || existingLog.userAgent,
+      };
+      
+      filename = path.basename(existingFilePath);
+      filepath = existingFilePath;
+      
+      await fs.writeFile(filepath, JSON.stringify(updatedLogEntry, null, 2));
+      console.log(`📊 Log updated: ${logId} (${mergedLogs.length} total events, +${newLogs.length} new) from session ${sessionId}`);
+      
+      res.status(200).json({
+        success: true,
+        logId,
+        message: 'Logs updated successfully',
+        filename,
+        eventCount: mergedLogs.length,
+        newEventsCount: newLogs.length,
+        uploadedAt,
+        lastUpdatedAt: now,
+        isUpdate: true
+      });
+    } else {
+      // Create new log entry
+      logId = uuid();
+      uploadedAt = now;
+      
+      const logEntry: StoredLogEntry = {
+        id: logId,
+        sessionId,
+        deviceInfo,
+        logs,
+        metadata,
+        uploadedAt,
+        lastUpdatedAt: now,
+        userAgent,
+      };
+      
+      filename = `log_${sessionId}_${Date.now()}.json`;
+      filepath = path.join(LOGS_DIR, filename);
+      
+      await fs.writeFile(filepath, JSON.stringify(logEntry, null, 2));
       console.log(`📊 Log uploaded: ${logId} (${logs.length} events) from session ${sessionId}`);
       
       res.status(200).json({
@@ -99,16 +167,18 @@ router.post('/upload', (req: Request, res: Response) => {
         message: 'Logs uploaded successfully',
         filename,
         eventCount: logs.length,
-        uploadedAt
+        uploadedAt,
+        lastUpdatedAt: now,
+        isUpdate: false
       });
-    })
-    .catch((error) => {
-      console.error('Failed to upload logs:', error);
-      res.status(500).json({
-        error: 'Failed to upload logs',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      });
+    }
+  } catch (error) {
+    console.error('Failed to upload logs:', error);
+    res.status(500).json({
+      error: 'Failed to upload logs',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
+  }
 });
 
 // Get all uploaded logs

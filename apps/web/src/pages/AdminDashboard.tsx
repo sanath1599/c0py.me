@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { getUploadedLogs, deleteUploadedLogs } from '../utils/eventLogger';
 import { formatTimestamp } from '../utils/formatTimestamp';
 import { GlassCard } from '../components/GlassCard';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface UploadedLog {
   id: string;
@@ -12,8 +13,15 @@ interface UploadedLog {
   logs: any[];
   metadata: any;
   uploadedAt: string;
-  ipAddress?: string;
+  lastUpdatedAt?: string;
   userAgent?: string;
+}
+
+interface DailyData {
+  date: string;
+  logs: number;
+  events: number;
+  sessions: number;
 }
 
 interface LogStats {
@@ -24,6 +32,16 @@ interface LogStats {
   browsers: Record<string, number>;
   averageEventsPerLog: number;
   averageEventsPerSession: number;
+  // Weekly stats
+  weeklyLogs: number;
+  weeklyEvents: number;
+  weeklySessions: number;
+  // Daily averages
+  avgLogsPerDay: number;
+  avgEventsPerDay: number;
+  avgSessionsPerDay: number;
+  // Time series data for charts
+  dailyData: DailyData[];
 }
 
 export const AdminDashboard: React.FC = () => {
@@ -39,6 +57,11 @@ export const AdminDashboard: React.FC = () => {
   const [filterBrowser, setFilterBrowser] = useState('');
   const [sortBy, setSortBy] = useState<'uploadedAt' | 'eventCount' | 'sessionId'>('uploadedAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  // Event filters for selected log
+  const [eventSearch, setEventSearch] = useState('');
+  const [eventTypeFilter, setEventTypeFilter] = useState('');
+  const [eventSortBy, setEventSortBy] = useState<'timestamp' | 'type'>('timestamp');
+  const [eventSortOrder, setEventSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const loadUploadedLogs = async () => {
     try {
@@ -79,11 +102,45 @@ export const AdminDashboard: React.FC = () => {
     const deviceTypes = new Map<string, number>();
     const browsers = new Map<string, number>();
     const sessions = new Set<string>();
+    const weeklySessions = new Set<string>();
     let totalEvents = 0;
+    let weeklyEvents = 0;
+    let weeklyLogs = 0;
+
+    // Calculate date boundaries
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oldestDate = logData.length > 0 
+      ? new Date(Math.min(...logData.map(log => new Date(log.uploadedAt).getTime())))
+      : now;
+    const daysDiff = Math.max(1, Math.ceil((now.getTime() - oldestDate.getTime()) / (24 * 60 * 60 * 1000)));
+
+    // Daily data map
+    const dailyDataMap = new Map<string, { logs: number; events: number; sessions: Set<string> }>();
 
     logData.forEach(log => {
-      totalEvents += log.logs.length;
+      const logDate = new Date(log.uploadedAt);
+      const dateKey = logDate.toISOString().split('T')[0];
+      const eventCount = log.logs.length;
+
+      totalEvents += eventCount;
       sessions.add(log.sessionId);
+
+      // Weekly stats
+      if (logDate >= oneWeekAgo) {
+        weeklyEvents += eventCount;
+        weeklyLogs++;
+        weeklySessions.add(log.sessionId);
+      }
+
+      // Daily aggregation
+      if (!dailyDataMap.has(dateKey)) {
+        dailyDataMap.set(dateKey, { logs: 0, events: 0, sessions: new Set() });
+      }
+      const dayData = dailyDataMap.get(dateKey)!;
+      dayData.logs++;
+      dayData.events += eventCount;
+      dayData.sessions.add(log.sessionId);
 
       // Count device types
       if (log.deviceInfo?.device?.type) {
@@ -105,6 +162,22 @@ export const AdminDashboard: React.FC = () => {
       }
     });
 
+    // Convert daily data map to array and fill missing days
+    const dailyData: DailyData[] = [];
+    const startDate = new Date(oneWeekAgo);
+    const endDate = new Date(now);
+    
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dateKey = d.toISOString().split('T')[0];
+      const dayData = dailyDataMap.get(dateKey) || { logs: 0, events: 0, sessions: new Set<string>() };
+      dailyData.push({
+        date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        logs: dayData.logs,
+        events: dayData.events,
+        sessions: dayData.sessions.size,
+      });
+    }
+
     setStats({
       totalLogs: logData.length,
       totalEvents,
@@ -113,6 +186,13 @@ export const AdminDashboard: React.FC = () => {
       browsers: Object.fromEntries(browsers),
       averageEventsPerLog: logData.length > 0 ? Math.round(totalEvents / logData.length) : 0,
       averageEventsPerSession: sessions.size > 0 ? Math.round(totalEvents / sessions.size) : 0,
+      weeklyLogs,
+      weeklyEvents,
+      weeklySessions: weeklySessions.size,
+      avgLogsPerDay: daysDiff > 0 ? Math.round((logData.length / daysDiff) * 10) / 10 : 0,
+      avgEventsPerDay: daysDiff > 0 ? Math.round((totalEvents / daysDiff) * 10) / 10 : 0,
+      avgSessionsPerDay: daysDiff > 0 ? Math.round((sessions.size / daysDiff) * 10) / 10 : 0,
+      dailyData,
     });
   };
 
@@ -231,6 +311,65 @@ export const AdminDashboard: React.FC = () => {
 
   const filteredLogs = getFilteredAndSortedLogs();
 
+  // Get filtered and sorted events for selected log
+  const getFilteredAndSortedEvents = () => {
+    if (!selectedLog) return [];
+    
+    let filtered = selectedLog.logs.filter(event => {
+      // Search filter
+      if (eventSearch) {
+        const searchLower = eventSearch.toLowerCase();
+        const eventType = (event.type || '').toLowerCase();
+        const eventDetails = JSON.stringify(event.details || {}).toLowerCase();
+        if (!eventType.includes(searchLower) && !eventDetails.includes(searchLower)) {
+          return false;
+        }
+      }
+      
+      // Type filter
+      if (eventTypeFilter && event.type !== eventTypeFilter) {
+        return false;
+      }
+      
+      return true;
+    });
+    
+    // Sort events
+    filtered.sort((a, b) => {
+      let aValue: any, bValue: any;
+      
+      switch (eventSortBy) {
+        case 'timestamp':
+          aValue = a.timestamp || 0;
+          bValue = b.timestamp || 0;
+          break;
+        case 'type':
+          aValue = (a.type || '').toLowerCase();
+          bValue = (b.type || '').toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+      
+      if (eventSortOrder === 'asc') {
+        return aValue > bValue ? 1 : -1;
+      } else {
+        return aValue < bValue ? 1 : -1;
+      }
+    });
+    
+    return filtered;
+  };
+
+  const filteredEvents = getFilteredAndSortedEvents();
+  
+  // Get unique event types for filter dropdown
+  const getUniqueEventTypes = () => {
+    if (!selectedLog) return [];
+    const types = new Set(selectedLog.logs.map(event => event.type).filter(Boolean));
+    return Array.from(types).sort();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center">
@@ -347,59 +486,168 @@ export const AdminDashboard: React.FC = () => {
           </motion.div>
         )}
 
-        {/* Statistics Cards */}
+        {/* Statistics Cards with Graphs */}
         {stats && (
           <motion.div 
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
+            {/* Total Logs Card */}
             <GlassCard className="p-6" hover>
-              <div className="flex items-center">
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
-                  <span className="text-2xl">📊</span>
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center">
+                    <div className="p-2 rounded-xl" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
+                      <span className="text-xl">📊</span>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-xs font-medium" style={{ color: '#A6521B', opacity: 0.8 }}>Total Logs</p>
+                      <p className="text-2xl font-bold" style={{ color: '#2C1B12' }}>{stats.totalLogs}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium" style={{ color: '#A6521B', opacity: 0.8 }}>Total Logs</p>
-                  <p className="text-2xl font-bold" style={{ color: '#2C1B12' }}>{stats.totalLogs}</p>
+                <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                  <div>
+                    <p style={{ color: '#A6521B', opacity: 0.6 }}>This Week</p>
+                    <p className="font-semibold" style={{ color: '#2C1B12' }}>{stats.weeklyLogs}</p>
+                  </div>
+                  <div>
+                    <p style={{ color: '#A6521B', opacity: 0.6 }}>AVG/Day</p>
+                    <p className="font-semibold" style={{ color: '#2C1B12' }}>{stats.avgLogsPerDay}</p>
+                  </div>
                 </div>
+              </div>
+              <div style={{ height: '120px', width: '100%' }}>
+                <ResponsiveContainer>
+                  <LineChart data={stats.dailyData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                    <Line 
+                      type="monotone" 
+                      dataKey="logs" 
+                      stroke="#A6521B" 
+                      strokeWidth={2}
+                      dot={{ fill: '#A6521B', r: 3 }}
+                    />
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fontSize: 9, fill: '#A6521B', opacity: 0.7 }}
+                      axisLine={{ stroke: '#A6521B', opacity: 0.3 }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                        border: '1px solid rgba(166, 82, 27, 0.2)',
+                        borderRadius: '8px',
+                        fontSize: '12px'
+                      }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </GlassCard>
 
+            {/* Total Events Card */}
             <GlassCard className="p-6" hover>
-              <div className="flex items-center">
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
-                  <span className="text-2xl">📈</span>
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center">
+                    <div className="p-2 rounded-xl" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
+                      <span className="text-xl">📈</span>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-xs font-medium" style={{ color: '#A6521B', opacity: 0.8 }}>Total Events</p>
+                      <p className="text-2xl font-bold" style={{ color: '#2C1B12' }}>{stats.totalEvents}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium" style={{ color: '#A6521B', opacity: 0.8 }}>Total Events</p>
-                  <p className="text-2xl font-bold" style={{ color: '#2C1B12' }}>{stats.totalEvents}</p>
+                <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                  <div>
+                    <p style={{ color: '#A6521B', opacity: 0.6 }}>This Week</p>
+                    <p className="font-semibold" style={{ color: '#2C1B12' }}>{stats.weeklyEvents}</p>
+                  </div>
+                  <div>
+                    <p style={{ color: '#A6521B', opacity: 0.6 }}>AVG/Day</p>
+                    <p className="font-semibold" style={{ color: '#2C1B12' }}>{stats.avgEventsPerDay}</p>
+                  </div>
                 </div>
+              </div>
+              <div style={{ height: '120px', width: '100%' }}>
+                <ResponsiveContainer>
+                  <BarChart data={stats.dailyData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                    <Bar 
+                      dataKey="events" 
+                      fill="#A6521B"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fontSize: 9, fill: '#A6521B', opacity: 0.7 }}
+                      axisLine={{ stroke: '#A6521B', opacity: 0.3 }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                        border: '1px solid rgba(166, 82, 27, 0.2)',
+                        borderRadius: '8px',
+                        fontSize: '12px'
+                      }}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </GlassCard>
 
+            {/* Unique Sessions Card */}
             <GlassCard className="p-6" hover>
-              <div className="flex items-center">
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
-                  <span className="text-2xl">👥</span>
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center">
+                    <div className="p-2 rounded-xl" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
+                      <span className="text-xl">👥</span>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-xs font-medium" style={{ color: '#A6521B', opacity: 0.8 }}>Unique Sessions</p>
+                      <p className="text-2xl font-bold" style={{ color: '#2C1B12' }}>{stats.totalSessions}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium" style={{ color: '#A6521B', opacity: 0.8 }}>Unique Sessions</p>
-                  <p className="text-2xl font-bold" style={{ color: '#2C1B12' }}>{stats.totalSessions}</p>
+                <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                  <div>
+                    <p style={{ color: '#A6521B', opacity: 0.6 }}>This Week</p>
+                    <p className="font-semibold" style={{ color: '#2C1B12' }}>{stats.weeklySessions}</p>
+                  </div>
+                  <div>
+                    <p style={{ color: '#A6521B', opacity: 0.6 }}>AVG/Day</p>
+                    <p className="font-semibold" style={{ color: '#2C1B12' }}>{stats.avgSessionsPerDay}</p>
+                  </div>
                 </div>
               </div>
-            </GlassCard>
-
-            <GlassCard className="p-6" hover>
-              <div className="flex items-center">
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
-                  <span className="text-2xl">📊</span>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium" style={{ color: '#A6521B', opacity: 0.8 }}>Avg Events/Log</p>
-                  <p className="text-2xl font-bold" style={{ color: '#2C1B12' }}>{stats.averageEventsPerLog}</p>
-                </div>
+              <div style={{ height: '120px', width: '100%' }}>
+                <ResponsiveContainer>
+                  <LineChart data={stats.dailyData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                    <Line 
+                      type="monotone" 
+                      dataKey="sessions" 
+                      stroke="#F6C148" 
+                      strokeWidth={2}
+                      dot={{ fill: '#F6C148', r: 3 }}
+                    />
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fontSize: 9, fill: '#A6521B', opacity: 0.7 }}
+                      axisLine={{ stroke: '#A6521B', opacity: 0.3 }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                        border: '1px solid rgba(166, 82, 27, 0.2)',
+                        borderRadius: '8px',
+                        fontSize: '12px'
+                      }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </GlassCard>
           </motion.div>
@@ -510,7 +758,14 @@ export const AdminDashboard: React.FC = () => {
                               ? 'rgba(166, 82, 27, 0.4)' 
                               : 'rgba(166, 82, 27, 0.2)'
                           }}
-                          onClick={() => setSelectedLog(log)}
+                          onClick={() => {
+                            setSelectedLog(log);
+                            // Reset event filters when selecting a new log
+                            setEventSearch('');
+                            setEventTypeFilter('');
+                            setEventSortBy('timestamp');
+                            setEventSortOrder('desc');
+                          }}
                           whileHover={{ scale: 1.02, y: -2 }}
                           whileTap={{ scale: 0.98 }}
                         >
@@ -537,7 +792,9 @@ export const AdminDashboard: React.FC = () => {
                             <div>📊 {log.logs.length} events</div>
                             <div>🕒 {formatTimestamp(new Date(log.uploadedAt).getTime())}</div>
                             <div>🆔 {log.sessionId.substring(0, 8)}...</div>
-                            {log.ipAddress && <div>🌍 {log.ipAddress}</div>}
+                            {log.lastUpdatedAt && log.lastUpdatedAt !== log.uploadedAt && (
+                              <div>🔄 Updated: {formatTimestamp(new Date(log.lastUpdatedAt).getTime())}</div>
+                            )}
                           </div>
                         </motion.div>
                       ))}
@@ -571,7 +828,6 @@ export const AdminDashboard: React.FC = () => {
                       <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(166, 82, 27, 0.05)' }}>
                         <h4 className="font-semibold mb-3" style={{ color: '#2C1B12' }}>Network & Browser</h4>
                         <div className="space-y-2 text-sm" style={{ color: '#A6521B' }}>
-                          <div><strong>Connection:</strong> {selectedLog.deviceInfo?.network?.connectionType || 'Unknown'}</div>
                           <div><strong>Downlink:</strong> {selectedLog.deviceInfo?.network?.downlink || 'Unknown'} Mbps</div>
                           <div><strong>RTT:</strong> {selectedLog.deviceInfo?.network?.rtt || 'Unknown'} ms</div>
                           <div><strong>Language:</strong> {selectedLog.deviceInfo?.browser?.language || 'Unknown'}</div>
@@ -586,16 +842,86 @@ export const AdminDashboard: React.FC = () => {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm" style={{ color: '#A6521B' }}>
                         <div><strong>Session ID:</strong> {selectedLog.sessionId}</div>
                         <div><strong>Uploaded:</strong> {formatTimestamp(new Date(selectedLog.uploadedAt).getTime())}</div>
-                        <div><strong>IP Address:</strong> {selectedLog.ipAddress || 'Unknown'}</div>
+                        {selectedLog.lastUpdatedAt && selectedLog.lastUpdatedAt !== selectedLog.uploadedAt && (
+                          <div><strong>Last Updated:</strong> {formatTimestamp(new Date(selectedLog.lastUpdatedAt).getTime())}</div>
+                        )}
                         <div><strong>Total Events:</strong> {selectedLog.logs.length}</div>
                       </div>
                     </div>
 
+                    {/* Event Filters */}
+                    <GlassCard className="p-4 mb-6">
+                      <h4 className="font-semibold mb-4" style={{ color: '#2C1B12' }}>Event Filters & Search</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-2" style={{ color: '#A6521B' }}>Search Events</label>
+                          <input
+                            type="text"
+                            value={eventSearch}
+                            onChange={(e) => setEventSearch(e.target.value)}
+                            placeholder="Search by type or details..."
+                            className="w-full px-3 py-2 rounded-xl border bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-sm"
+                            style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-2" style={{ color: '#A6521B' }}>Event Type</label>
+                          <select
+                            value={eventTypeFilter}
+                            onChange={(e) => setEventTypeFilter(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-sm"
+                            style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}
+                          >
+                            <option value="">All Types</option>
+                            {getUniqueEventTypes().map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-2" style={{ color: '#A6521B' }}>Sort By</label>
+                          <select
+                            value={eventSortBy}
+                            onChange={(e) => setEventSortBy(e.target.value as 'timestamp' | 'type')}
+                            className="w-full px-3 py-2 rounded-xl border bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-sm"
+                            style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}
+                          >
+                            <option value="timestamp">Timestamp</option>
+                            <option value="type">Event Type</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-2" style={{ color: '#A6521B' }}>Order</label>
+                          <button
+                            onClick={() => setEventSortOrder(eventSortOrder === 'asc' ? 'desc' : 'asc')}
+                            className="w-full px-3 py-2 rounded-xl border transition-all hover:scale-105 text-sm"
+                            style={{ 
+                              borderColor: 'rgba(166, 82, 27, 0.2)', 
+                              backgroundColor: 'rgba(166, 82, 27, 0.1)',
+                              color: '#A6521B'
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
+                          >
+                            {eventSortOrder === 'asc' ? '↑ Ascending' : '↓ Descending'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mt-3 text-sm" style={{ color: '#A6521B', opacity: 0.7 }}>
+                        Showing {filteredEvents.length} of {selectedLog.logs.length} events
+                      </div>
+                    </GlassCard>
+
                     {/* Events List */}
                     <div>
-                      <h4 className="font-semibold mb-3" style={{ color: '#2C1B12' }}>Events ({selectedLog.logs.length})</h4>
+                      <h4 className="font-semibold mb-3" style={{ color: '#2C1B12' }}>Events ({filteredEvents.length} of {selectedLog.logs.length})</h4>
                       <div className="space-y-2 max-h-96 overflow-y-auto">
-                        {selectedLog.logs.map((event, index) => (
+                        {filteredEvents.length === 0 ? (
+                          <div className="p-6 text-center" style={{ color: '#A6521B', opacity: 0.6 }}>
+                            No events found matching filters
+                          </div>
+                        ) : (
+                          filteredEvents.map((event, index) => (
                           <motion.div 
                             key={event.id || index} 
                             className="p-3 rounded-xl text-sm border"
@@ -620,7 +946,8 @@ export const AdminDashboard: React.FC = () => {
                               </pre>
                             </div>
                           </motion.div>
-                        ))}
+                          ))
+                        )}
                       </div>
                     </div>
                   </div>
