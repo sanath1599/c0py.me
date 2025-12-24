@@ -154,6 +154,22 @@ export const useWebRTC = (
   const sendFile = useCallback(async (file: File, peer: Peer) => {
     console.log(`📤 Sending file ${file.name} to ${peer.name}`);
     
+    // Check if there's already a transfer in progress
+    const activeTransfers = transfers.filter(t => 
+      t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting'
+    );
+    
+    if (activeTransfers.length > 0) {
+      const errorMessage = 'Error: transfer in progress, please wait for current transfer to finish before starting a new transfer';
+      console.error(errorMessage);
+      
+      if (addToast) {
+        addToast('error', errorMessage);
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
     const transferId = `send-${Date.now()}-${Math.random()}`;
     const processName = 'webrtc_file_transfer';
     
@@ -358,7 +374,7 @@ export const useWebRTC = (
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
     }
-  }, [connections, createPeerConnection, onSignal, userId, storePendingRequest, isConnected]);
+  }, [connections, createPeerConnection, onSignal, userId, storePendingRequest, isConnected, transfers, addToast]);
 
   const sendFileInChunks = (dataChannel: RTCDataChannel, file: File, transferId: string) => {
     const reader = new FileReader();

@@ -39,8 +39,17 @@ export const FileSharing: React.FC<FileSharingProps> = ({
     }
   }, [transfers]);
 
+  // Check if there's a transfer in progress
+  const hasActiveTransfer = transfers.some(t => 
+    t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting'
+  );
+  
   const handleSend = () => {
     if (selectedPeer && selectedFiles.length > 0) {
+      if (hasActiveTransfer) {
+        // This should be prevented by the button being disabled, but just in case
+        return;
+      }
       onSendFiles(selectedFiles, selectedPeer);
     }
   };
@@ -146,25 +155,49 @@ export const FileSharing: React.FC<FileSharingProps> = ({
       {/* Send button - always visible if peer and files selected */}
       <AnimatePresence>
         {selectedPeer && selectedFiles.length > 0 && (
-          <motion.button
-            className="w-full mb-6 p-4 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
-            style={{ backgroundColor: '#F6C148' }}
-            onClick={handleSend}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#A6521B';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#F6C148';
-            }}
+          <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
           >
-            <Send size={18} />
-            Send {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}
-          </motion.button>
+            <motion.button
+              className="w-full mb-6 p-4 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ 
+                backgroundColor: hasActiveTransfer ? '#999999' : '#F6C148',
+                cursor: hasActiveTransfer ? 'not-allowed' : 'pointer'
+              }}
+              onClick={handleSend}
+              disabled={hasActiveTransfer}
+              onMouseEnter={(e) => {
+                if (!hasActiveTransfer) {
+                  e.currentTarget.style.backgroundColor = '#A6521B';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!hasActiveTransfer) {
+                  e.currentTarget.style.backgroundColor = '#F6C148';
+                }
+              }}
+              whileHover={hasActiveTransfer ? {} : { scale: 1.02 }}
+              whileTap={hasActiveTransfer ? {} : { scale: 0.98 }}
+            >
+              <Send size={18} />
+              {hasActiveTransfer 
+                ? 'Transfer in progress...' 
+                : `Send ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}`
+              }
+            </motion.button>
+            {hasActiveTransfer && (
+              <motion.p
+                className="text-sm text-red-600 text-center mb-4 -mt-4"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                Error: transfer in progress, please wait for current transfer to finish before starting a new transfer
+              </motion.p>
+            )}
+          </motion.div>
         )}
       </AnimatePresence>
 
