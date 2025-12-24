@@ -648,7 +648,7 @@ const filteredPeers = React.useMemo(() => {
           {/* --- New Three-Row Layout --- */}
 
           {/* Row 1: Transfer Progress (current transfers only) */}
-          {transfers.some(t => t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting') && (
+          {transfers.some(t => t.status === 'transferring') && (
             <div className="w-full px-4 md:px-8 mb-8">
               <div className="max-w-md md:max-w-full mx-auto">
                 <LionsDen

@@ -622,9 +622,9 @@ export const LionsDen: React.FC<LionsDenProps> = ({
         <h2 className="text-xl font-bold mb-6" style={{ color: '#2C1B12' }}>
           Transfer Progress
         </h2>
-        {transfers.some(t => t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting') ? (
+        {transfers.some(t => t.status === 'transferring') ? (
           <div className="space-y-4 mb-0">
-            {transfers.filter(t => t.status !== 'completed').map((transfer) => {
+            {transfers.filter(t => t.status === 'transferring').map((transfer) => {
               const incoming = isIncoming(transfer);
               const borderColor = incoming ? 'rgba(34, 197, 94, 0.3)' : 'rgba(166, 82, 27, 0.3)'; // green for incoming, orange for outgoing
               const bgColor = incoming ? 'rgba(34, 197, 94, 0.1)' : 'rgba(166, 82, 27, 0.1)';
@@ -728,8 +728,9 @@ export const LionsDen: React.FC<LionsDenProps> = ({
               <tbody>
                 {completedTransfers.map((t) => {
                   const times = transferTimes?.[t.id];
-                  // Determine direction: fallback to peer logic
-                  const direction = t.peer?.id === currentUser.id ? 'Received' : 'Sent';
+                  // Determine direction: check if transfer ID starts with "receive-" (incoming)
+                  const isIncoming = t.id.startsWith('receive-');
+                  const direction = isIncoming ? 'Received' : 'Sent';
                   return (
                     <tr key={t.id} className="border-t">
                       <td className="px-4 py-2 font-medium">{t.file.name}</td>
