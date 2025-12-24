@@ -41,7 +41,16 @@ sudo cp -r dist/* "$FRONTEND_DEPLOY_DIR/"
 log "Restarting backend API server..."
 cd "$BACKEND_DIR"
 npm install
-docker ps --filter \"name=sharedrop-redis\" --format \"{{.Names}}\" | grep sharedrop-redis || (docker ps -a --filter \"name=sharedrop-redis\" --format \"{{.Names}}\" | grep sharedrop-redis && docker start sharedrop-redis) || docker run -d --name sharedrop-redis -p 6379:6379 redis:7-alpine redis-server --appendonly yes
+log "Ensuring Redis container is running..."
+if docker ps --filter "name=sharedrop-redis" --format "{{.Names}}" | grep -q sharedrop-redis; then
+  log "Redis container is already running"
+elif docker ps -a --filter "name=sharedrop-redis" --format "{{.Names}}" | grep -q sharedrop-redis; then
+  log "Starting existing Redis container..."
+  docker start sharedrop-redis || true
+else
+  log "Creating and starting Redis container..."
+  docker run -d --name sharedrop-redis -p 6379:6379 redis:7-alpine redis-server --appendonly yes || true
+fi
 pm2 restart sharedrop-api
 #pm2 start src/server.ts --name "sharedrop-api" -- start
 
