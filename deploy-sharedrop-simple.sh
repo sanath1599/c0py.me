@@ -4,7 +4,7 @@
 # Usage: ./deploy-sharedrop-simple.sh
 
 REPO_URL="https://github.com/sanath1599/sharedrop"
-APP_DIR="/opt/sharedrop"
+APP_DIR="/opt/c0py.me"
 FRONTEND_DIR="$APP_DIR/apps/web"
 FRONTEND_DEPLOY_DIR="/var/www/c0py.me"
 BACKEND_DIR="$APP_DIR/apps/api"
