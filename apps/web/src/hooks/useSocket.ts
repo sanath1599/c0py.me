@@ -7,15 +7,13 @@ import { useNetworkDetection } from './useNetworkDetection';
 import { useFallbackConnection } from './useFallbackConnection';
 import { useConnectionRetry } from './useConnectionRetry';
 
-// Random name generator
-const randomNames = [
-  'Alex', 'Sam', 'Jordan', 'Taylor', 'Casey', 'Riley', 'Quinn', 'Avery',
-  'Morgan', 'Drew', 'Blake', 'Cameron', 'Dakota', 'Emery', 'Finley', 'Harper',
-  'Indigo', 'Jules', 'Kai', 'Logan', 'Mason', 'Nova', 'Ocean', 'Parker',
-  'Quincy', 'River', 'Sage', 'Tatum', 'Unity', 'Vale', 'Winter', 'Xander'
-];
-
-const getRandomName = () => randomNames[Math.floor(Math.random() * randomNames.length)];
+// Random name generator (kept for potential future use)
+// const randomNames = [
+//   'Alex', 'Sam', 'Jordan', 'Taylor', 'Casey', 'Riley', 'Quinn', 'Avery',
+//   'Morgan', 'Drew', 'Blake', 'Cameron', 'Dakota', 'Emery', 'Finley', 'Harper',
+//   'Indigo', 'Jules', 'Kai', 'Logan', 'Mason', 'Nova', 'Ocean', 'Parker',
+//   'Quincy', 'River', 'Sage', 'Tatum', 'Unity', 'Vale', 'Winter', 'Xander'
+// ];
 
 export const useSocket = () => {
   const socketRef = useRef<Socket | null>(null);
@@ -54,7 +52,7 @@ export const useSocket = () => {
         resetRetryState();
         stopFallback();
         joinedRoomsRef.current.clear();
-        startPingPong();
+        // Don't start custom ping-pong - Socket.IO handles this internally
       },
       onRetryFailure: (error, retryCount) => {
         console.log(`❌ Connection retry ${retryCount} failed:`, error);
@@ -102,7 +100,7 @@ export const useSocket = () => {
     }, 2000);
   }, [originalHandleNetworkError]);
   
-  const { status: fallbackStatus, startFallback, stopFallback, apiFallback, on: onFallbackEvent } = useFallbackConnection({
+  const { status: fallbackStatus, startFallback, stopFallback, on: onFallbackEvent } = useFallbackConnection({
     apiBaseUrl: '/api',
     pollingInterval: 2000,
     maxRetries: 3,
@@ -113,16 +111,9 @@ export const useSocket = () => {
   const [connectionMode, setConnectionMode] = useState<'websocket' | 'long-polling' | 'api' | 'none'>('none');
   const [isUnstable, setIsUnstable] = useState(false);
   
-  // Ping-pong mechanism
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const pongTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastPongRef = useRef<number>(Date.now());
-  const pingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
   // Debounce error handling to prevent flickering
   const errorDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const lastErrorRef = useRef<string | null>(null);
-  const connectionAttemptsRef = useRef<number>(0);
   const lastConnectionTimeRef = useRef<number>(0);
 
   // Fetch public IP for Family world
@@ -158,16 +149,16 @@ export const useSocket = () => {
     socketRef.current = io(WS_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 20,
+      reconnectionAttempts: Infinity, // Keep trying to reconnect
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 60000,
+      timeout: 20000, // Connection timeout
       forceNew: false,
       path: '/socket.io/',
       autoConnect: true,
-      // Add additional debugging options
       upgrade: true,
-      rememberUpgrade: false
+      rememberUpgrade: true, // Remember successful upgrade to websocket
+      // Let Socket.IO handle ping/pong internally - don't interfere
     });
 
     const socket = socketRef.current;
@@ -177,32 +168,31 @@ export const useSocket = () => {
       // Always mark as connected when socket connects, regardless of network status
       setIsConnected(true);
       setConnectionMode('websocket');
+      // Use the latest versions of these functions
       resetRetryState();
       stopFallback();
       // Clear joined rooms on new connection
       joinedRoomsRef.current.clear();
       
-      // Start ping-pong mechanism
-      startPingPong();
+      // Don't start custom ping-pong - Socket.IO handles this internally
+      // The built-in mechanism is more reliable
       
-      // If network is offline, mark as unstable but keep connection
-      if (!networkStatus.isOnline) {
-        setIsUnstable(true);
-        console.log('⚠️ Socket connected but network is offline - marking as unstable connection');
-      } else {
-        setIsUnstable(false);
-      }
+      // Check network status (using current state, not closure)
+      setIsUnstable(false); // Reset unstable state on successful connection
     });
 
     socket.on('connect_error', (error) => {
       console.error('❌ Socket connection error:', error);
       console.error('Error details:', {
         message: error.message,
-        description: error.description,
-        context: error.context,
-        type: error.type,
+        description: (error as any).description,
+        context: (error as any).context,
+        type: (error as any).type,
         stack: error.stack
       });
+      
+      setIsConnected(false);
+      setConnectionMode('none');
       
       // Check for specific namespace errors
       if (error.message && error.message.includes('namespace')) {
@@ -216,18 +206,32 @@ export const useSocket = () => {
             socketRef.current = io(WS_URL, {
               transports: ['websocket', 'polling'],
               reconnection: true,
-              reconnectionAttempts: 20,
+              reconnectionAttempts: Infinity,
               reconnectionDelay: 1000,
               reconnectionDelayMax: 5000,
-              timeout: 60000,
+              timeout: 20000,
               forceNew: true, // Force new connection
               path: '/socket.io/',
               autoConnect: true,
               upgrade: true,
-              rememberUpgrade: false
+              rememberUpgrade: true
             });
           }
         }, 2000);
+      } else {
+        // Only trigger network error handling if we're actually offline
+        // Socket.IO connection errors can happen for many reasons (server issues, CORS, etc.)
+        // that don't mean the network is offline
+        if (!navigator.onLine) {
+          // Actually offline - handle as network error
+          console.log('🌐 Device is offline - handling as network error');
+          handleNetworkError({ type: 'offline' });
+        } else {
+          // Online but Socket.IO connection failed - let Socket.IO handle reconnection
+          // Don't mark network as offline, just log the error
+          console.log('⚠️ Socket.IO connection error but device is online - letting Socket.IO handle reconnection');
+          // Socket.IO will automatically retry, we just need to wait
+        }
       }
     });
 
@@ -238,76 +242,22 @@ export const useSocket = () => {
       // Clear joined rooms on disconnect
       joinedRoomsRef.current.clear();
       
-      // Stop ping-pong mechanism
-      stopPingPong();
-      
-      // Only handle as error if it's not a normal disconnect, reconnection, or client disconnect
-      if (reason !== 'io client disconnect' && 
+      // Only handle as network error if we're actually offline
+      // Socket.IO will automatically handle reconnection for most disconnect reasons
+      if (!navigator.onLine) {
+        // Actually offline - handle as network error
+        console.log('🌐 Device is offline - handling disconnect as network error');
+        handleNetworkError({ type: 'offline' });
+      } else if (reason !== 'io client disconnect' && 
           reason !== 'io server disconnect' && 
           reason !== 'transport close' &&
-          reason !== 'ping timeout') {
-        handleNetworkError({ type: 'connection_lost', reason });
+          reason !== 'ping timeout' &&
+          reason !== 'transport error') {
+        // Online but unexpected disconnect - only log, don't mark network as offline
+        console.log('⚠️ Unexpected disconnect reason:', reason, '- Socket.IO will handle reconnection');
+        // Don't call handleNetworkError here - Socket.IO will reconnect automatically
       } else {
-        console.log('🔌 Normal disconnect - not triggering error handling');
-      }
-    });
-
-    socket.on('connect_error', (error) => {
-      console.error('🔌 Socket connection error:', error);
-      setIsConnected(false);
-      setConnectionMode('none');
-      
-      // Stop ping-pong mechanism
-      stopPingPong();
-      
-      // Use robust retry system for connection errors
-      retryConnection(
-        async () => {
-          // Attempt to reconnect
-          const socket = socketRef.current;
-          if (socket) {
-            socket.connect();
-            // Wait for connection or timeout
-            return new Promise<boolean>((resolve) => {
-              const timeout = setTimeout(() => resolve(false), 10000);
-              const onConnect = () => {
-                clearTimeout(timeout);
-                socket.off('connect', onConnect);
-                socket.off('connect_error', onError);
-                resolve(true);
-              };
-              const onError = () => {
-                clearTimeout(timeout);
-                socket.off('connect', onConnect);
-                socket.off('connect_error', onError);
-                resolve(false);
-              };
-              socket.on('connect', onConnect);
-              socket.on('connect_error', onError);
-            });
-          }
-          return false;
-        },
-        async () => {
-          // Fallback: try API connection
-          console.log('🔄 Trying API fallback connection...');
-          startFallback('api');
-          return fallbackStatus.isActive;
-        }
-      );
-      
-      // Also handle as network error for UI feedback
-      handleNetworkError(error);
-    });
-
-    // Ping-pong event handlers
-    socket.on('pong', () => {
-      lastPongRef.current = Date.now();
-      
-      // Clear any pending pong timeout
-      if (pongTimeoutRef.current) {
-        clearTimeout(pongTimeoutRef.current);
-        pongTimeoutRef.current = null;
+        console.log('🔌 Normal disconnect - Socket.IO will handle reconnection');
       }
     });
 
@@ -341,9 +291,16 @@ export const useSocket = () => {
     });
 
     return () => {
-      socket.disconnect();
+      // Cleanup: disconnect socket when component unmounts
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
     };
-  }, [handleNetworkError, resetRetryState, stopFallback]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array - socket should only be created once on mount
+  // Functions like handleNetworkError, resetRetryState, stopFallback are stable from hooks
 
   // Setup fallback event listeners
   useEffect(() => {
@@ -462,51 +419,18 @@ export const useSocket = () => {
     };
   };
 
-  // Ping-pong functions
-  const startPingPong = useCallback(() => {
-    // Clear any existing intervals
-    stopPingPong();
-    
-    // Send ping every 120 seconds (increased from 90)
-    pingIntervalRef.current = setInterval(() => {
-      const socket = socketRef.current;
-      if (socket && socket.connected) {
-        console.log('🏓 Sending ping...');
-        socket.emit('ping');
-        
-        // Set timeout for pong response (60 seconds - increased from 45)
-        pongTimeoutRef.current = setTimeout(() => {
-          console.log('⚠️ Pong timeout - forcing disconnect');
-          // Force disconnect to trigger reconnection
-          socket.disconnect();
-        }, 60000);
-      }
-    }, 120000);
-  }, []);
+  // Removed custom ping-pong functions - Socket.IO handles ping/pong internally
+  // Socket.IO's built-in mechanism is more reliable and doesn't conflict
 
-  const stopPingPong = useCallback(() => {
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = null;
-    }
-    
-    if (pongTimeoutRef.current) {
-      clearTimeout(pongTimeoutRef.current);
-      pongTimeoutRef.current = null;
-    }
-  }, []);
-
-  // Cleanup ping-pong on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopPingPong();
-      
       // Cleanup error debounce
       if (errorDebounceRef.current) {
         clearTimeout(errorDebounceRef.current);
       }
     };
-  }, [stopPingPong]);
+  }, []);
 
   // Listen to network status changes
   useEffect(() => {

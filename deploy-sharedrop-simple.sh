@@ -27,7 +27,7 @@ log "Creating frontend .env file..."
 cat <<EOF > .env
 VITE_CLIENT_URL=https://backend.c0py.me
 VITE_API_URL=https://backend.c0py.me
-VITE_WS_URL=wss://backend.c0py.me
+VITE_WS_URL=https://backend.c0py.me
 EOF
 
 log "Building frontend..."

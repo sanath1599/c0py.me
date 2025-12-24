@@ -114,8 +114,22 @@ export const useWebRTC = (
     };
     pc.onconnectionstatechange = () => {
       console.log(`🔗 Connection state with ${peerId}:`, pc.connectionState);
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
+      
+      // Only remove connection if it's completely failed or closed
+      // 'disconnected' state is temporary and connection might recover
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        console.log(`⚠️ WebRTC connection ${pc.connectionState} with ${peerId} - removing connection`);
         removeConnection(peerId);
+        // Also remove data channel if it exists
+        const dataChannel = dataChannelsRef.current.get(peerId);
+        if (dataChannel) {
+          dataChannelsRef.current.delete(peerId);
+        }
+      } else if (pc.connectionState === 'disconnected') {
+        // Connection is disconnected but might recover - don't remove yet
+        console.log(`⚠️ WebRTC connection disconnected with ${peerId} - waiting for recovery or failure`);
+      } else if (pc.connectionState === 'connected') {
+        console.log(`✅ WebRTC connection connected with ${peerId}`);
       }
     };
     pc.oniceconnectionstatechange = () => {
@@ -184,13 +198,48 @@ export const useWebRTC = (
     }
 
     try {
-      // Always create a new connection for each transfer
-      logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
+      // Reuse existing connection if available and healthy, otherwise create new one
+      logSystemEvent.systemProcessStep(processName, 'checking_connection', {
         transferId,
         peerId: peer.id
       });
       
-      const pc = createPeerConnection(peer.id);
+      let pc = connections.get(peer.id);
+      
+      // Check if existing connection is usable
+      if (pc) {
+        const state = pc.connectionState;
+        if (state === 'connected' || state === 'connecting') {
+          console.log(`♻️ Reusing existing WebRTC connection with ${peer.id} (state: ${state})`);
+          logSystemEvent.systemProcessStep(processName, 'reusing_connection', {
+            transferId,
+            peerId: peer.id,
+            connectionState: state
+          });
+        } else if (state === 'closed' || state === 'failed') {
+          console.log(`🔄 Existing connection ${state}, creating new one`);
+          logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
+            transferId,
+            peerId: peer.id
+          });
+          pc = createPeerConnection(peer.id);
+        } else {
+          // disconnected or other states - try to reuse but create new if needed
+          console.log(`⚠️ Existing connection in ${state} state, creating new one for reliability`);
+          logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
+            transferId,
+            peerId: peer.id
+          });
+          pc = createPeerConnection(peer.id);
+        }
+      } else {
+        console.log(`🆕 Creating new WebRTC connection with ${peer.id}`);
+        logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
+          transferId,
+          peerId: peer.id
+        });
+        pc = createPeerConnection(peer.id);
+      }
       
       // Create data channel
       logSystemEvent.systemProcessStep(processName, 'creating_data_channel', {
@@ -285,8 +334,11 @@ export const useWebRTC = (
         
         // Remove from data channels ref
         dataChannelsRef.current.delete(peer.id);
-        // Remove closed connection
-        removeConnection(peer.id);
+        
+        // Don't remove the WebRTC connection immediately - it might be reused
+        // Only remove if the connection state is actually failed/closed
+        // The connection state change handler will handle cleanup if needed
+        console.log('ℹ️ Data channel closed - WebRTC connection may still be usable for future transfers');
       };
       dataChannelsRef.current.set(peer.id, dataChannel);
       // Create offer
@@ -381,12 +433,10 @@ export const useWebRTC = (
           // Track successful file transfer
           logSystemEvent.transferCompleted(transferId, Date.now() - startTime, file.size, 0);
           
-          // Close data channel after a delay
-          setTimeout(() => {
-            if (dataChannel.readyState === 'open') {
-              dataChannel.close();
-            }
-          }, 1000);
+          // Don't close data channel immediately - keep it open for potential future transfers
+          // Only close if explicitly needed (e.g., user cancels or connection fails)
+          // This allows multiple file transfers without re-establishing WebRTC connection
+          console.log('✅ File transfer completed - keeping data channel open for future transfers');
         }
       }
     };
@@ -592,6 +642,8 @@ export const useWebRTC = (
             console.log('📥 Data channel closed');
             // Remove from data channels ref
             dataChannelsRef.current.delete(from);
+            // Don't remove WebRTC connection - it might be reused for future transfers
+            console.log('ℹ️ Data channel closed - WebRTC connection may still be usable for future transfers');
           };
         };
       }

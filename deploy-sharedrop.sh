@@ -111,6 +111,18 @@ server {
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # WebSocket specific timeouts
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+        proxy_connect_timeout 86400;
+        
+        # Disable buffering for WebSocket
+        proxy_buffering off;
+        proxy_cache off;
     }
 
     client_max_body_size 100M;
@@ -139,7 +151,7 @@ cd "$FRONTEND_DIR"
 pnpm install
 
 log "Building frontend with production environment..."
-VITE_API_URL="https://backend.$DOMAIN/api" VITE_WS_URL="wss://backend.$DOMAIN/socket.io" VITE_CLIENT_URL="https://$DOMAIN" pnpm build
+VITE_API_URL="https://backend.$DOMAIN/api" VITE_WS_URL="https://backend.$DOMAIN" VITE_CLIENT_URL="https://$DOMAIN" pnpm build
 
 log "Deploying frontend..."
 sudo mkdir -p "$FRONTEND_DEPLOY_DIR"
@@ -166,7 +178,7 @@ FRONTEND_ENV_FILE="$FRONTEND_DIR/.env"
 log "Creating frontend environment file..."
 sudo bash -c "cat > $FRONTEND_ENV_FILE" <<EOF
 VITE_API_URL=https://backend.$DOMAIN
-VITE_WS_URL=wss://backend.$DOMAIN/socket.io
+VITE_WS_URL=https://backend.$DOMAIN
 VITE_CLIENT_URL=https://$DOMAIN
 EOF
 

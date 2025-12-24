@@ -7,8 +7,7 @@ import { getEnvironmentConfig } from '../../../packages/config/env';
 export class SocketService {
   private io: SocketIOServer;
   private peerSockets: Map<string, Socket> = new Map();
-  private lastPingTime: Map<string, number> = new Map();
-  private pingTimeout: Map<string, NodeJS.Timeout> = new Map();
+  // Removed custom ping tracking - Socket.IO handles this internally
 
   constructor(server: HTTPServer) {
     const config = getEnvironmentConfig();
@@ -21,9 +20,14 @@ export class SocketService {
       transports: ['websocket', 'polling'],
       allowEIO3: true, // Allow Engine.IO v3 clients
       path: '/socket.io/',
-      // Add connection debugging
-      pingTimeout: 60000,
-      pingInterval: 25000
+      // Optimized ping/pong timing for stable connections
+      // pingInterval: how often server sends ping (default 25000ms)
+      // pingTimeout: how long to wait for pong before disconnecting (default 20000ms)
+      // Increased timeout to prevent premature disconnects
+      pingTimeout: 60000, // 60 seconds - wait longer for pong response
+      pingInterval: 25000, // 25 seconds - standard ping interval
+      // Connection timeout
+      connectTimeout: 45000, // 45 seconds to establish connection
     });
 
     // Handle connection errors
@@ -71,33 +75,14 @@ export class SocketService {
       });
 
       // Handle disconnection
-      socket.on('disconnect', async () => {
+      socket.on('disconnect', async (reason) => {
+        console.log(`🔌 Socket ${socket.id} disconnecting. Reason: ${reason}`);
         await this.handleDisconnect(socket);
       });
 
-      // Handle ping for keep-alive
-      socket.on('ping', () => {
-        console.log(`🏓 Ping received from socket: ${socket.id}`);
-        
-        // Update last ping time
-        this.lastPingTime.set(socket.id, Date.now());
-        
-        // Clear existing timeout
-        if (this.pingTimeout.has(socket.id)) {
-          clearTimeout(this.pingTimeout.get(socket.id)!);
-        }
-        
-        // Set new timeout (180 seconds - much longer than client's 60s ping interval)
-        const timeoutId = setTimeout(() => {
-          console.warn(`⚠️ Ping timeout for socket: ${socket.id} - forcing disconnect`);
-          socket.disconnect(true);
-        }, 180000);
-        
-        this.pingTimeout.set(socket.id, timeoutId);
-        
-        socket.emit('pong');
-        console.log(`🏓 Pong sent to socket: ${socket.id}`);
-      });
+      // Remove custom ping handler - Socket.IO handles ping/pong internally
+      // The built-in mechanism is more reliable and doesn't conflict
+      // Socket.IO automatically sends ping and expects pong responses
     });
   }
 
@@ -296,15 +281,8 @@ export class SocketService {
         console.log(`👋 User ${peer.name} disconnected from room ${peer.roomId}`);
       }
 
-      // Remove socket reference and cleanup ping tracking
+      // Remove socket reference
       this.peerSockets.delete(socket.id);
-      
-      // Cleanup ping tracking
-      this.lastPingTime.delete(socket.id);
-      if (this.pingTimeout.has(socket.id)) {
-        clearTimeout(this.pingTimeout.get(socket.id)!);
-        this.pingTimeout.delete(socket.id);
-      }
     } catch (error) {
       console.error('❌ Error handling disconnect:', error);
     }
@@ -322,8 +300,7 @@ export class SocketService {
   public getConnectionStats() {
     return {
       totalConnections: this.peerSockets.size,
-      pingTimeouts: this.pingTimeout.size,
-      lastPingTimes: Object.fromEntries(this.lastPingTime),
+      // Ping/pong is handled internally by Socket.IO
     };
   }
 

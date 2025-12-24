@@ -139,8 +139,25 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
 
   // Detect error type
   const detectErrorType = useCallback((error: any): NetworkError['type'] => {
+    // Always check navigator.onLine first - this is the most reliable indicator
     if (!navigator.onLine) {
       return 'offline';
+    }
+    
+    // If error explicitly says offline, trust it
+    if (error.type === 'offline') {
+      return 'offline';
+    }
+    
+    // Socket.IO errors should not be treated as network offline
+    // They can happen for many reasons (server issues, CORS, wrong URL, etc.)
+    if (error.type === 'TransportError' || 
+        error.type === 'TransportUnknownError' ||
+        error.message?.includes('xhr poll error') ||
+        error.message?.includes('websocket error')) {
+      // These are Socket.IO transport errors, not network offline
+      // Only mark as server_unreachable if we're actually online
+      return navigator.onLine ? 'server_unreachable' : 'offline';
     }
     
     if (error.name === 'AbortError' || error.code === 'ECONNABORTED') {
@@ -470,11 +487,9 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
 
     // Start health check interval
     healthCheckIntervalRef.current = setInterval(async () => {
-      // First check if we have actual network connectivity
-      const hasConnectivity = await checkNetworkConnectivity();
-      
-      if (!hasConnectivity) {
-        // No network connectivity - mark as offline and clear all network info
+      // First check navigator.onLine - this is the most reliable indicator
+      if (!navigator.onLine) {
+        // Browser says we're offline - trust it
         setNetworkStatus(prev => ({
           ...prev,
           isOnline: false,
@@ -484,7 +499,38 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
           rtt: 0,
           saveData: false,
         }));
-        handleNetworkError({ type: 'offline' });
+        // Only trigger error if we weren't already offline
+        if (networkStatus.isOnline) {
+          handleNetworkError({ type: 'offline' });
+        }
+        return;
+      }
+      
+      // Browser says we're online - verify with connectivity check
+      const hasConnectivity = await checkNetworkConnectivity();
+      
+      if (!hasConnectivity) {
+        // Connectivity check failed but browser says online - might be a false positive
+        // Only mark as offline if we've had multiple consecutive failures
+        const consecutiveFailures = networkStatus.lastError?.type === 'offline' ? 
+          (networkStatus.lastError.retryCount || 0) + 1 : 1;
+        
+        if (consecutiveFailures >= 3) {
+          // Multiple failures - likely actually offline
+          setNetworkStatus(prev => ({
+            ...prev,
+            isOnline: false,
+            connectionType: 'unknown',
+            effectiveType: 'unknown',
+            downlink: 0,
+            rtt: 0,
+            saveData: false,
+          }));
+          handleNetworkError({ type: 'offline' });
+        } else {
+          // Just log, don't mark as offline yet
+          console.warn(`Network connectivity check failed (attempt ${consecutiveFailures}/3) - browser says online`);
+        }
         return;
       }
       
@@ -502,6 +548,16 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
           // Just log the failure but don't trigger error handling yet
           console.warn(`Server health check failed (attempt ${consecutiveFailures}/3)`);
         }
+      } else if (isHealthy && !networkStatus.isOnline) {
+        // Server is healthy but we were marked as offline - restore online status
+        const info = getNetworkInfo();
+        setNetworkStatus(prev => ({
+          ...prev,
+          isOnline: true,
+          lastError: null,
+          ...info,
+        }));
+        resetRetryState();
       }
     }, config.healthCheckInterval);
 
