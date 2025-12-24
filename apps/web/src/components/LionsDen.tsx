@@ -122,13 +122,40 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     }
   };
 
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length > 0) {
       const totalSize = files.reduce((sum, file) => sum + file.size, 0);
       const fileTypes = [...new Set(files.map(file => file.type))];
       logUserAction.filesSelected(files.length, totalSize, fileTypes);
-      onFilesSelected(files);
+      
+      // Process files for IndexedDB storage on mobile
+      const { shouldUseIndexedDB } = await import('../utils/device');
+      const { storeOutgoingFile } = await import('../utils/indexedDB');
+      
+      const processedFiles = await Promise.all(
+        files.map(async (file) => {
+          if (shouldUseIndexedDB(file.size)) {
+            const fileId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            try {
+              await storeOutgoingFile(fileId, file);
+              // Create a new File object with metadata
+              const fileWithMetadata = Object.assign(file, { 
+                fileId, 
+                useIndexedDB: true 
+              });
+              return fileWithMetadata;
+            } catch (error) {
+              console.error('Failed to store file to IndexedDB:', error);
+              // Fallback to in-memory if IndexedDB fails
+              return Object.assign(file, { useIndexedDB: false });
+            }
+          }
+          return Object.assign(file, { useIndexedDB: false });
+        })
+      );
+      
+      onFilesSelected(processedFiles);
     }
     // Reset the input value so the same file can be selected again
     e.target.value = '';
