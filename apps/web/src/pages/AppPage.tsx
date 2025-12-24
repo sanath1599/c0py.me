@@ -649,8 +649,9 @@ const filteredPeers = React.useMemo(() => {
 
           {/* Row 1: Transfer Progress (current transfers only) */}
           {transfers.some(t => t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting') && (
-            <div className="w-full px-0 md:px-0 mb-8">
-              <LionsDen
+            <div className="w-full px-4 md:px-8 mb-8">
+              <div className="max-w-md md:max-w-full mx-auto">
+                <LionsDen
                 peers={filteredPeers}
                 currentUser={currentUser}
                 selectedPeer={selectedPeer}
@@ -670,6 +671,7 @@ const filteredPeers = React.useMemo(() => {
                 mode="progress"
                 transferTimes={transferTimes}
               />
+              </div>
             </div>
           )}
 

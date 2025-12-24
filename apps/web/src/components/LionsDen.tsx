@@ -611,49 +611,89 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   }
   if (mode === 'progress') {
     // Only render Transfer Progress (current transfers)
+    // Helper to determine if transfer is incoming or outgoing
+    const isIncoming = (transfer: FileTransfer) => {
+      // Check if transfer ID starts with "receive-" (incoming) or if peer is sending to us
+      return transfer.id.startsWith('receive-');
+    };
+
     return (
-      <div className="w-full bg-white/90 p-8">
+      <GlassCard className="p-6 w-full">
         <h2 className="text-xl font-bold mb-6" style={{ color: '#2C1B12' }}>
           Transfer Progress
         </h2>
         {transfers.some(t => t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting') ? (
           <div className="space-y-4 mb-0">
-            {transfers.filter(t => t.status !== 'completed').map((transfer) => (
-              <div
-                key={transfer.id}
-                className="p-4 rounded-lg bg-white/40 border border-orange-100/60 backdrop-blur-sm"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold truncate" style={{ color: '#2C1B12' }}>
-                      {transfer.file.name}
-                    </h3>
-                    <p className="text-sm text-orange-700/80">
-                      To: {transfer.peer.name}
-                    </p>
+            {transfers.filter(t => t.status !== 'completed').map((transfer) => {
+              const incoming = isIncoming(transfer);
+              const borderColor = incoming ? 'rgba(34, 197, 94, 0.3)' : 'rgba(166, 82, 27, 0.3)'; // green for incoming, orange for outgoing
+              const bgColor = incoming ? 'rgba(34, 197, 94, 0.1)' : 'rgba(166, 82, 27, 0.1)';
+              const textColor = incoming ? 'rgba(34, 197, 94, 0.8)' : 'rgba(166, 82, 27, 0.8)';
+              
+              return (
+                <div
+                  key={transfer.id}
+                  className="p-4 rounded-lg backdrop-blur-sm"
+                  style={{
+                    backgroundColor: bgColor,
+                    borderColor: borderColor,
+                    borderWidth: '1px',
+                    borderStyle: 'solid'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col items-center mb-2">
+                        <span 
+                          className="px-3 py-1 rounded-full text-xs font-semibold mb-1"
+                          style={{
+                            backgroundColor: incoming ? 'rgba(34, 197, 94, 0.2)' : 'rgba(166, 82, 27, 0.2)',
+                            color: incoming ? 'rgba(34, 197, 94, 1)' : 'rgba(166, 82, 27, 1)'
+                          }}
+                        >
+                          {incoming ? '⬇️ Receiving File' : '⬆️ Sending File'}
+                        </span>
+                        <h3 className="font-semibold truncate text-center w-full" style={{ color: '#2C1B12' }}>
+                          {transfer.file.name}
+                        </h3>
+                      </div>
+                      <p className="text-sm text-center" style={{ color: textColor }}>
+                        {incoming ? `From: ${transfer.peer.name}` : `To: ${transfer.peer.name}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {getStatusIcon(transfer.status)}
+                      {transfer.status === 'transferring' && (
+                        <button
+                          onClick={() => onCancelTransfer(transfer.id)}
+                          className="p-1 rounded-full transition-colors"
+                          style={{
+                            backgroundColor: incoming ? 'rgba(34, 197, 94, 0.2)' : 'rgba(166, 82, 27, 0.2)',
+                            color: incoming ? 'rgba(34, 197, 94, 0.8)' : 'rgba(166, 82, 27, 0.8)'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = incoming ? 'rgba(34, 197, 94, 0.3)' : 'rgba(166, 82, 27, 0.3)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = incoming ? 'rgba(34, 197, 94, 0.2)' : 'rgba(166, 82, 27, 0.2)';
+                          }}
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {getStatusIcon(transfer.status)}
-                    {transfer.status === 'transferring' && (
-                      <button
-                        onClick={() => onCancelTransfer(transfer.id)}
-                        className="p-1 rounded-full hover:bg-orange-100 text-orange-600 transition-colors"
-                      >
-                        <X size={16} />
-                      </button>
-                    )}
-                  </div>
+                  <CubProgress 
+                    progress={transfer.progress || 0}
+                    className="mb-2"
+                    speed={transfer.speed}
+                    timeRemaining={transfer.timeRemaining}
+                    fileSize={transfer.file.size}
+                    status={transfer.status}
+                  />
                 </div>
-                <CubProgress 
-                  progress={transfer.progress || 0}
-                  className="mb-2"
-                  speed={transfer.speed}
-                  timeRemaining={transfer.timeRemaining}
-                  fileSize={transfer.file.size}
-                  status={transfer.status}
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-8">
@@ -661,7 +701,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
             <p className="text-orange-700/80">No active transfers</p>
           </div>
         )}
-      </div>
+      </GlassCard>
     );
   }
   if (mode === 'history') {
