@@ -14,7 +14,7 @@ A modern, open-source web application for secure peer-to-peer file sharing with 
 
 <p align="center">
   <a href="https://c0py.me/">🌐 Live Website</a> • 
-  <a href="https://www.youtube.com/watch?v=kf1zqB7TmNM">📹 Demo Video</a>
+  <a href="https://youtu.be/kf1zqB7TmNM">📹 Demo Video</a>
 </p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -457,7 +457,7 @@ Comprehensive documentation is available in the [`docs/`](docs/) directory:
 ## Support
 
 - **Live Website**: [https://c0py.me/](https://c0py.me/)
-- **Demo Video**: [Watch on YouTube](https://www.youtube.com/watch?v=kf1zqB7TmNM)
+- **Demo Video**: [Watch on YouTube](https://youtu.be/kf1zqB7TmNM)
 - **Documentation**: See [docs/](docs/) for comprehensive documentation
 - **Issues**: Report bugs and feature requests on [GitHub](https://github.com/sanath1599/c0py.me/issues)
 - **Discussions**: Join community discussions on [GitHub](https://github.com/sanath1599/c0py.me/discussions)
@@ -477,5 +477,5 @@ Comprehensive documentation is available in the [`docs/`](docs/) directory:
 
 <p align="center">
   <a href="https://c0py.me/">🌐 Visit c0py.me</a> • 
-  <a href="https://www.youtube.com/watch?v=kf1zqB7TmNM">📹 Watch Demo</a>
+  <a href="https://youtu.be/kf1zqB7TmNM">📹 Watch Demo</a>
 </p>

@@ -1,7 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Play, Maximize2 } from 'lucide-react';
-import { GlassCard } from './GlassCard';
 
 interface DemoModalProps {
   isOpen: boolean;
@@ -48,7 +47,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose }) => {
           {/* Video Container */}
           <div className="flex-1 relative">
             <iframe
-              src="https://www.youtube.com/watch?v=kf1zqB7TmNM"
+              src="https://www.youtube.com/embed/kf1zqB7TmNM"
               title="c0py.me Demo Video"
               className="w-full h-full"
               frameBorder="0"
