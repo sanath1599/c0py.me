@@ -455,6 +455,19 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
+              onClick={() => navigate('/admin/backend-logs')}
+              className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
+              style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
+            >
+              <span className="text-orange-700">📋</span>
+              <span className="text-xs md:text-sm font-medium hidden sm:inline" style={{ color: '#A6521B' }}>
+                Backend Logs
+              </span>
+            </button>
+
+            <button
               onClick={() => navigate('/app')}
               className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 rounded-full transition-all hover:scale-105"
               style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}

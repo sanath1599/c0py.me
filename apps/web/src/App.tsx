@@ -5,6 +5,7 @@ import { AppPage } from './pages/AppPage';
 import { ClientLogPage } from './pages/ClientLogPage';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { AdminLogin } from './pages/AdminLogin';
+import { BackendLogsViewer } from './components/BackendLogsViewer';
 import { initAnalytics, trackPageView } from './utils/analytics';
 
 // Component to track page views
@@ -29,6 +30,9 @@ const PageTracker: React.FC = () => {
       case '/logs':
         trackPageView('c0py.me - Client Event Log');
         break;
+      case '/admin/backend-logs':
+        trackPageView('c0py.me - Backend Logs Viewer');
+        break;
       default:
         trackPageView(`c0py.me - ${path}`);
     }
@@ -51,6 +55,7 @@ function App() {
         <Route path="/app" element={<AppPage />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/backend-logs" element={<BackendLogsViewer />} />
         <Route path="/logs" element={<ClientLogPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

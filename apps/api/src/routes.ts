@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import redisService, { PendingRequest } from './redis';
 import logsRouter from './routes/logs';
+import backendLogsRouter from './routes/backendLogs';
 import logger from './logger';
 
 const router: express.Router = express.Router();
@@ -337,5 +338,8 @@ router.get('/webrtc/pending/:receiverId', (req: Request, res: Response) => {
 
 // Mount logs routes
 router.use('/logs', logsRouter);
+
+// Mount backend logs routes
+router.use('/backend-logs', backendLogsRouter);
 
 export default router; 
