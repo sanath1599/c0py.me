@@ -1065,10 +1065,6 @@ export const useWebRTC = (
                     console.error('❌ Received file-end but no file metadata found');
                   }
                 }
-                  } else {
-                    console.error('❌ Received file-end but no file metadata found');
-                  }
-                }
               } catch (error) {
                 console.error('❌ Error parsing message:', error);
               }
