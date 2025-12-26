@@ -29,11 +29,23 @@ export interface NetworkDetectionOptions {
   enableFallback?: boolean;
 }
 
+// Get API URL from environment or default to backend.c0py.me
+const getApiUrl = () => {
+  if (typeof window !== 'undefined') {
+    // Use environment variable if available, otherwise default to backend.c0py.me
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://backend.c0py.me';
+    // Remove trailing slash and ensure we have the full URL
+    const baseUrl = apiUrl.replace(/\/$/, '');
+    return `${baseUrl}/api/health`;
+  }
+  return 'https://backend.c0py.me/api/health';
+};
+
 const DEFAULT_OPTIONS: Required<NetworkDetectionOptions> = {
   maxRetries: 5,
   retryDelay: 3000,
   healthCheckInterval: 10000, // Much less frequent checks to reduce false positives
-  serverHealthUrl: '/api/health',
+  serverHealthUrl: getApiUrl(),
   enableFallback: true,
 };
 
@@ -125,8 +137,9 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
   const checkNetworkConnectivity = useCallback(async (): Promise<boolean> => {
     try {
       // Try to fetch a small resource to test actual connectivity
-      // Use a simple endpoint that doesn't require CORS
-      const response = await fetch('/api/health', {
+      // Use the backend health endpoint
+      const healthUrl = getApiUrl();
+      const response = await fetch(healthUrl, {
         method: 'GET',
         cache: 'no-cache',
         signal: AbortSignal.timeout(3000), // 3 second timeout

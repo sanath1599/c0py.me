@@ -1203,7 +1203,7 @@ export const useWebRTC = (
                     } else {
                       return prev.map(t =>
                         t.peer.id === from && t.file.name === message.name && t.file.type === message.fileType && t.status !== 'completed' && t.status !== 'failed'
-                          ? { ...t, status: 'transferring', progress: 0, id: transferId }
+                          ? { ...t, status: 'transferring', progress: 0, id: transferId, isIncoming: true } // Preserve and ensure isIncoming is true for incoming transfers
                           : t
                       );
                     }

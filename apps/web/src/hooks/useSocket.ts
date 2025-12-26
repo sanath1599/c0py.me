@@ -28,7 +28,12 @@ export const useSocket = () => {
     maxRetries: 5,
     retryDelay: 3000,
     healthCheckInterval: 10000,
-    serverHealthUrl: '/api/health',
+    serverHealthUrl: (() => {
+      // Get API URL from environment or default to backend.c0py.me
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://backend.c0py.me';
+      const baseUrl = apiUrl.replace(/\/$/, '');
+      return `${baseUrl}/api/health`;
+    })(),
     enableFallback: true,
   });
 
