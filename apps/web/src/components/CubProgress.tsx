@@ -143,13 +143,12 @@ export const CubProgress: React.FC<CubProgressProps> = ({
         </div>
         {/* File size, speed, and ETA or status icon */}
         <div className="flex justify-between items-center">
-          {/* File size - show as "X sent / Y total" or "X received / Y total" */}
+          {/* File size - show as "X / Y total" */}
           <div className="text-sm font-semibold text-orange-700 bg-orange-100/50 px-2 py-1 rounded">
             {fileSize ? (() => {
               // Calculate transferred size from progress
               const transferredSize = (clampedProgress / 100) * fileSize;
-              const action = isIncoming ? 'received' : 'sent';
-              return `${formatFileSize(transferredSize)} ${action} / ${formatFileSize(fileSize)}`;
+              return `${formatFileSize(transferredSize)} / ${formatFileSize(fileSize)}`;
             })() : 'Unknown size'}
           </div>
           {/* Speed and ETA or status icon */}
