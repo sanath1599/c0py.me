@@ -13,6 +13,7 @@ interface CubProgressProps {
   retryRequested?: number; // Number of chunks requested for retry
   retryProgress?: number; // Progress of retry chunks (0-100)
   retryReceived?: number; // Number of retry chunks received
+  isIncoming?: boolean; // Whether this is an incoming (receiving) or outgoing (sending) transfer
 }
 
 export const CubProgress: React.FC<CubProgressProps> = ({ 
@@ -25,19 +26,28 @@ export const CubProgress: React.FC<CubProgressProps> = ({
   status,
   retryRequested,
   retryProgress,
-  retryReceived
+  retryReceived,
+  isIncoming = false
 }) => {
   // Clamp progress between 0 and 100
   const clampedProgress = Math.max(0, Math.min(100, progress));
   
-  // Format speed
+  // Format speed in megabits per second (Mb/s) to make it look faster
   const formatSpeed = (bytesPerSecond: number) => {
-    if (bytesPerSecond >= 1024 * 1024) {
-      return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
-    } else if (bytesPerSecond >= 1024) {
-      return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+    // Convert bytes to bits (multiply by 8)
+    const bitsPerSecond = bytesPerSecond * 8;
+    
+    if (bitsPerSecond >= 1000 * 1000 * 1000) {
+      // Gigabits per second
+      return `${(bitsPerSecond / (1000 * 1000 * 1000)).toFixed(2)} Gb/s`;
+    } else if (bitsPerSecond >= 1000 * 1000) {
+      // Megabits per second
+      return `${(bitsPerSecond / (1000 * 1000)).toFixed(1)} Mb/s`;
+    } else if (bitsPerSecond >= 1000) {
+      // Kilobits per second
+      return `${(bitsPerSecond / 1000).toFixed(1)} Kb/s`;
     } else {
-      return `${bytesPerSecond.toFixed(0)} B/s`;
+      return `${bitsPerSecond.toFixed(0)} b/s`;
     }
   };
 
@@ -133,9 +143,14 @@ export const CubProgress: React.FC<CubProgressProps> = ({
         </div>
         {/* File size, speed, and ETA or status icon */}
         <div className="flex justify-between items-center">
-          {/* File size */}
+          {/* File size - show as "X sent / Y total" or "X received / Y total" */}
           <div className="text-sm font-semibold text-orange-700 bg-orange-100/50 px-2 py-1 rounded">
-            {fileSize ? formatFileSize(fileSize) : 'Unknown size'}
+            {fileSize ? (() => {
+              // Calculate transferred size from progress
+              const transferredSize = (clampedProgress / 100) * fileSize;
+              const action = isIncoming ? 'received' : 'sent';
+              return `${formatFileSize(transferredSize)} ${action} / ${formatFileSize(fileSize)}`;
+            })() : 'Unknown size'}
           </div>
           {/* Speed and ETA or status icon */}
           <div className="flex gap-3">

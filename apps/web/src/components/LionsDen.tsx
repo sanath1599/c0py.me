@@ -743,6 +743,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                     retryRequested={transfer.retryRequested}
                     retryProgress={transfer.retryProgress}
                     retryReceived={transfer.retryReceived}
+                    isIncoming={incoming}
                   />
                 </div>
               );
