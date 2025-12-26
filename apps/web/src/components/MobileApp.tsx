@@ -95,18 +95,26 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   // Auto-advance to progress when transfer starts (only if not manually navigating)
   const prevHasActiveTransferRef = useRef(false);
+  const isManualNavigationRef = useRef(false);
+  
   useEffect(() => {
     const hasActiveTransfer = transfers.some(t => 
       t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting'
     );
     
-    // Only auto-advance if transfer just started (wasn't active before)
-    if (hasActiveTransfer && !prevHasActiveTransferRef.current && currentSlide < 3) {
+    // Only auto-advance if transfer just started (wasn't active before) AND user isn't manually navigating
+    if (hasActiveTransfer && !prevHasActiveTransferRef.current && !isManualNavigationRef.current && currentSlide < 3) {
       setCurrentSlide(3);
     }
     
     prevHasActiveTransferRef.current = hasActiveTransfer;
-  }, [transfers]);
+    // Reset manual navigation flag after a short delay
+    if (isManualNavigationRef.current) {
+      setTimeout(() => {
+        isManualNavigationRef.current = false;
+      }, 500);
+    }
+  }, [transfers, currentSlide]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -181,13 +189,21 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Navigation handlers
   const handlePrevious = () => {
     if (currentSlide > 0) {
-      setCurrentSlide(prev => prev - 1);
+      isManualNavigationRef.current = true;
+      setCurrentSlide(prev => {
+        console.log('Previous: moving from', prev, 'to', prev - 1);
+        return prev - 1;
+      });
     }
   };
 
   const handleNext = () => {
     if (currentSlide < 3) {
-      setCurrentSlide(prev => prev + 1);
+      isManualNavigationRef.current = true;
+      setCurrentSlide(prev => {
+        console.log('Next: moving from', prev, 'to', prev + 1);
+        return prev + 1;
+      });
     }
   };
 
@@ -715,7 +731,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       {/* Carousel Container */}
       <motion.div
         className="flex"
-        animate={{ x: `-${currentSlide * 100}%` }}
+        animate={{ x: `-${currentSlide * 25}%` }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         style={{ width: '400%', touchAction: 'pan-x' }}
         drag="x"
@@ -724,8 +740,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         onDragEnd={(event, info) => {
           const threshold = 50;
           if (info.offset.x > threshold && currentSlide > 0) {
+            isManualNavigationRef.current = true;
             handlePrevious();
           } else if (info.offset.x < -threshold && currentSlide < 3) {
+            isManualNavigationRef.current = true;
             handleNext();
           }
         }}
