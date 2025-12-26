@@ -127,7 +127,7 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
       // Try to fetch a small resource to test actual connectivity
       // Use a simple endpoint that doesn't require CORS
       const response = await fetch('/api/health', {
-        method: 'HEAD',
+        method: 'GET',
         cache: 'no-cache',
         signal: AbortSignal.timeout(3000), // 3 second timeout
       });
