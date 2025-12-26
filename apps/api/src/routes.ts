@@ -5,7 +5,7 @@ import logger from './logger';
 
 const router: express.Router = express.Router();
 
-// Health check endpoint
+// Health check endpoint (supports both GET and HEAD for network detection)
 router.get('/health', (req: Request, res: Response) => {
   redisService.ping()
     .then(redisPing => {
@@ -27,6 +27,18 @@ router.get('/health', (req: Request, res: Response) => {
         timestamp: new Date().toISOString(),
         error: error instanceof Error ? error.message : 'Unknown error'
       });
+    });
+});
+
+// HEAD method for health check (used by network detection)
+router.head('/health', (req: Request, res: Response) => {
+  redisService.ping()
+    .then(redisPing => {
+      // HEAD requests don't send body, just status code
+      res.status(200).end();
+    })
+    .catch(error => {
+      res.status(500).end();
     });
 });
 

@@ -68,8 +68,7 @@ export const useWebRTC = (
     lastProgressUpdate: number;
     lastProgressSize: number; // Track size at last progress update
     useIndexedDB: boolean;
-    transferId: string; // Receiver's transferId
-    senderTransferId: string; // Sender's transferId (for retry requests)
+    transferId: string; // Single transferId from sender (used throughout)
     chunkIndex: number;
     expectedChunks: number;
     receivedChunkIndices: Set<number>;
@@ -1107,36 +1106,35 @@ export const useWebRTC = (
                 } else if (message.type === 'file-start') {
                   console.log('📥 Receiving file:', message.name);
                   
+                  // Get sender's transferId from incomingFiles (should always be available)
+                  const incomingFile = incomingFiles.find(f => f.from === from);
+                  if (!incomingFile || !incomingFile.transferId) {
+                    console.error('❌ file-start received but no incomingFile or transferId found');
+                    return;
+                  }
+                  
+                  // Use the sender's transferId (single source of truth)
+                  const transferId = incomingFile.transferId;
+                  
                   // Check if we already have a receivedFile entry (from acceptIncomingFile)
-                  // If so, reuse its transferId to ensure consistency
                   let existingReceivedFile = receivedFilesRef.current.get(from);
-                  let transferId: string;
                   let startTime: number;
                   
-                  if (existingReceivedFile && existingReceivedFile.transferId) {
-                    // Reuse existing transferId
-                    transferId = existingReceivedFile.transferId;
-                    startTime = existingReceivedFile.startTime;
-                    console.log(`🔄 Reusing existing transferId: ${transferId}`);
-                    
-                    // Update the existing entry with file-start metadata
+                  if (existingReceivedFile) {
+                    // Update existing entry with correct transferId and file-start metadata
+                    existingReceivedFile.transferId = transferId; // Ensure we use sender's transferId
                     existingReceivedFile.name = message.name;
                     existingReceivedFile.size = message.size;
                     existingReceivedFile.type = message.fileType;
-                    existingReceivedFile.expectedChunks = Math.ceil(message.size / (message.chunkSize || 8192));
+                    startTime = existingReceivedFile.startTime;
+                    console.log(`🔄 Using sender's transferId: ${transferId}`);
                   } else {
-                    // Create new transferId
-                    transferId = `receive-${from}-${Date.now()}-${Math.random()}`;
                     startTime = Date.now();
                   }
                   
                   // Calculate expected chunk count
                   const chunkSize = message.chunkSize || 8192;
                   const expectedChunks = Math.ceil(message.size / chunkSize);
-                  
-                  // Get sender's transferId from incomingFiles if available
-                  const incomingFile = incomingFiles.find(f => f.from === from);
-                  const senderTransferId = incomingFile?.transferId || transferId; // Fallback to receiver's if not found
                   
                   // Set up received file immediately (synchronously) to avoid race conditions
                   // Only create new entry if it doesn't exist (wasn't created by acceptIncomingFile)
@@ -1151,8 +1149,7 @@ export const useWebRTC = (
                       lastProgressUpdate: 0,
                       lastProgressSize: 0, // Track size at last progress update
                       useIndexedDB: false, // Will be updated async
-                      transferId: transferId, // Receiver's transferId
-                      senderTransferId: senderTransferId, // Sender's transferId (for retry requests)
+                      transferId: transferId, // Use sender's transferId (single source of truth)
                       chunkIndex: 0,
                       expectedChunks: expectedChunks,
                       receivedChunkIndices: new Set<number>(),
@@ -1165,6 +1162,7 @@ export const useWebRTC = (
                     });
                   } else {
                     // Update existing entry - preserve file handle and stream if they exist
+                    existingReceivedFile.transferId = transferId; // Ensure correct transferId
                     existingReceivedFile.expectedChunks = expectedChunks;
                     existingReceivedFile.chunkIndex = 0;
                     existingReceivedFile.receivedSize = 0;
@@ -1173,10 +1171,6 @@ export const useWebRTC = (
                     existingReceivedFile.nextRetryChunkIndex = undefined;
                     existingReceivedFile.nextChunkIndex = undefined; // Reset chunk index tracking
                     existingReceivedFile.writeOffset = 0; // Reset write offset
-                    // Update sender's transferId if we have it
-                    if (incomingFile?.transferId) {
-                      existingReceivedFile.senderTransferId = incomingFile.transferId;
-                    }
                   }
                   
                   // Add transfer immediately
@@ -1256,18 +1250,38 @@ export const useWebRTC = (
                   // This is a metadata message before a regular chunk
                   // The actual chunk will come as binary data next
                   const receivedFile = receivedFilesRef.current.get(from);
+                  // All chunks use the single transferId from sender
                   if (receivedFile && receivedFile.transferId === message.transferId) {
                     receivedFile.nextChunkIndex = message.chunkIndex;
                     console.log(`📦 Receiving chunk ${message.chunkIndex} for transfer ${message.transferId}`);
+                  } else {
+                    console.warn(`⚠️ Chunk metadata received but transferId mismatch:`);
+                    console.warn(`   Message transferId: ${message.transferId}`);
+                    console.warn(`   File transferId: ${receivedFile?.transferId}`);
+                    // Still try to process if we have the file (fallback - matched by peer)
+                    if (receivedFile) {
+                      receivedFile.nextChunkIndex = message.chunkIndex;
+                      console.warn(`   Proceeding anyway (matched by peer)`);
+                    }
                   }
                   // The chunk will be handled in the binary data handler below
                 } else if (message.type === 'chunk-retry') {
                   // This is a metadata message before a retry chunk
                   // The actual chunk will come as binary data next
                   const receivedFile = receivedFilesRef.current.get(from);
+                  // Retry chunks use the single transferId from sender
                   if (receivedFile && receivedFile.transferId === message.transferId) {
                     receivedFile.nextRetryChunkIndex = message.chunkIndex;
                     console.log(`🔄 Receiving retry chunk ${message.chunkIndex} for transfer ${message.transferId}`);
+                  } else {
+                    console.warn(`⚠️ Retry chunk metadata received but transferId mismatch:`);
+                    console.warn(`   Message transferId: ${message.transferId}`);
+                    console.warn(`   File transferId: ${receivedFile?.transferId}`);
+                    // Still try to process if we have the file (fallback - matched by peer)
+                    if (receivedFile) {
+                      receivedFile.nextRetryChunkIndex = message.chunkIndex;
+                      console.warn(`   Proceeding anyway (matched by peer)`);
+                    }
                   }
                   // The chunk will be handled in the binary data handler below
                 } else if (message.type === 'file-end') {
@@ -1315,10 +1329,10 @@ export const useWebRTC = (
                           const dataChannel = dataChannelsRef.current.get(from);
                           if (dataChannel && dataChannel.readyState === 'open') {
                             console.log(`🔄 Requesting retry for ${missingChunkIndices.length} missing chunks`);
-                            console.log(`   Using sender's transferId: ${receivedFile.senderTransferId || receivedFile.transferId}`);
+                            console.log(`   Using transferId: ${receivedFile.transferId}`);
                             dataChannel.send(JSON.stringify({
                               type: 'chunk-retry-request',
-                              transferId: receivedFile.senderTransferId || receivedFile.transferId, // Use sender's transferId
+                              transferId: receivedFile.transferId, // Use single transferId
                               chunkIndices: missingChunkIndices
                             }));
                             
@@ -1409,10 +1423,10 @@ export const useWebRTC = (
                                 const dataChannel = dataChannelsRef.current.get(from);
                                 if (dataChannel && dataChannel.readyState === 'open') {
                                   console.log(`🔄 Requesting retry for ${missing.length} missing chunks`);
-                                  console.log(`   Using sender's transferId: ${receivedFile.senderTransferId || receivedFile.transferId}`);
+                                  console.log(`   Using transferId: ${receivedFile.transferId}`);
                                   dataChannel.send(JSON.stringify({
                                     type: 'chunk-retry-request',
-                                    transferId: receivedFile.senderTransferId || receivedFile.transferId, // Use sender's transferId
+                                    transferId: receivedFile.transferId, // Use single transferId
                                     chunkIndices: missing
                                   }));
                                   
@@ -1940,9 +1954,8 @@ export const useWebRTC = (
       // Remove from incoming files
       setIncomingFiles(prev => prev.filter(f => f.id !== incomingFileId));
       
-      // Add to transfers list
-      // Use consistent transferId format that matches file-start handler
-      const transferId = `receive-${incomingFile.from}-${Date.now()}-${Math.random()}`;
+      // Use the sender's transferId (single source of truth)
+      const transferId = incomingFile.transferId;
       const startTime = Date.now();
       
       setTransfers(prev => [...prev, {
@@ -1972,8 +1985,7 @@ export const useWebRTC = (
         lastProgressUpdate: 0,
         lastProgressSize: 0,
         useIndexedDB: false,
-        transferId: transferId, // Receiver's transferId
-        senderTransferId: incomingFile.transferId, // Store sender's transferId for retry requests
+        transferId: transferId, // Use sender's transferId (single source of truth)
         chunkIndex: 0,
         expectedChunks: 0, // Will be set when file-start is received
         receivedChunkIndices: new Set<number>(),
