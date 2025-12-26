@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { LionsDen } from '../components/LionsDen';
+import { MobileApp } from '../components/MobileApp';
 import { ProfileModal } from '../components/ProfileModal';
 import { RoomModal } from '../components/RoomModal';
 import { FamilyPrivacyNotice } from '../components/FamilyPrivacyNotice';
@@ -36,6 +37,7 @@ export const AppPage: React.FC = () => {
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => ({
     id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name: generateRandomUsername(),
@@ -110,6 +112,16 @@ export const AppPage: React.FC = () => {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showLargeFileModal, setShowLargeFileModal] = useState(false);
   const [largeFileInfo, setLargeFileInfo] = useState<{ size: number; fileName?: string } | null>(null);
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Preload network error image so it's available when network goes down
   useEffect(() => {
@@ -687,10 +699,35 @@ export const AppPage: React.FC = () => {
             </div>
           )}
 
-          {/* Row 2: 3-column grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full px-4 md:px-8 mb-8">
-            {/* Lion's Den (Radar + No cubs text) */}
-            <LionsDen
+          {/* Mobile App */}
+          {isMobile ? (
+            <div className="w-full px-4 mb-8">
+              <MobileApp
+                peers={peers}
+                currentUser={currentUser}
+                selectedPeer={selectedPeer}
+                selectedFiles={selectedFiles}
+                transfers={transfers}
+                currentWorld={selectedWorld}
+                currentRoom={currentRoom}
+                incomingFiles={incomingFiles}
+                onPeerClick={handlePeerClick}
+                onSendFiles={handleSendFiles}
+                onCancelTransfer={handleCancelTransfer}
+                onClearSelection={handleClearSelection}
+                onFilesSelected={handleFilesSelected}
+                onFileRemove={handleFileRemove}
+                onEditProfile={() => setShowProfileModal(true)}
+                onAcceptIncomingFile={acceptIncomingFile}
+                onRejectIncomingFile={rejectIncomingFile}
+              />
+            </div>
+          ) : (
+            <>
+              {/* Row 2: 3-column grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full px-4 md:px-8 mb-8">
+                {/* Lion's Den (Radar + No cubs text) */}
+                <LionsDen
               peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
@@ -752,11 +789,11 @@ export const AppPage: React.FC = () => {
               onRejectIncomingFile={rejectIncomingFile}
               mode="target"
             />
-          </div>
+              </div>
 
-          {/* Row 3: Transfer History Table (completed transfers only) */}
-          <div className="w-full px-0 md:px-0 mb-8">
-            <LionsDen
+              {/* Row 3: Transfer History Table (completed transfers only) */}
+              <div className="w-full px-0 md:px-0 mb-8">
+                <LionsDen
               peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
@@ -774,10 +811,12 @@ export const AppPage: React.FC = () => {
               onEditProfile={() => setShowProfileModal(true)}
               onAcceptIncomingFile={acceptIncomingFile}
               onRejectIncomingFile={rejectIncomingFile}
-              mode="history"
-              transferTimes={transferTimes}
-            />
-          </div>
+                mode="history"
+                transferTimes={transferTimes}
+              />
+              </div>
+            </>
+          )}
 
           {/* Incoming File Modal (always visible when needed) */}
           {incomingFiles && incomingFiles.length > 0 && (
