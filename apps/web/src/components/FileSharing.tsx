@@ -245,6 +245,7 @@ export const FileSharing: React.FC<FileSharingProps> = ({
               speed={transfer.speed}
               timeRemaining={transfer.timeRemaining}
               fileSize={transfer.file.size}
+              bytesTransferred={transfer.bytesTransferred}
             />
           </div>
         ))}

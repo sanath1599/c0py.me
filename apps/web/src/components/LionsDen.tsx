@@ -217,6 +217,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                 speed={transfer.speed}
                 timeRemaining={transfer.timeRemaining}
                 fileSize={transfer.file.size}
+                bytesTransferred={transfer.bytesTransferred}
                 status={transfer.status}
               />
             </div>
@@ -689,6 +690,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                     speed={transfer.speed}
                     timeRemaining={transfer.timeRemaining}
                     fileSize={transfer.file.size}
+                    bytesTransferred={transfer.bytesTransferred}
                     status={transfer.status}
                   />
                 </div>
