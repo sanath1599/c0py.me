@@ -241,6 +241,9 @@ export const FileSharing: React.FC<FileSharingProps> = ({
             {/* Cub Progress Bar */}
             <CubProgress 
               progress={transfer.progress || 0}
+              retryRequested={transfer.retryRequested}
+              retryProgress={transfer.retryProgress}
+              retryReceived={transfer.retryReceived}
               className="mb-2"
               speed={transfer.speed}
               timeRemaining={transfer.timeRemaining}

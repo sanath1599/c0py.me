@@ -125,7 +125,8 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
   const checkNetworkConnectivity = useCallback(async (): Promise<boolean> => {
     try {
       // Try to fetch a small resource to test actual connectivity
-      const response = await fetch('https://www.google.com/favicon.ico', {
+      // Use a simple endpoint that doesn't require CORS
+      const response = await fetch('/api/health', {
         method: 'HEAD',
         cache: 'no-cache',
         signal: AbortSignal.timeout(3000), // 3 second timeout

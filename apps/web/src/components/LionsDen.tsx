@@ -740,6 +740,9 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                     timeRemaining={transfer.timeRemaining}
                     fileSize={transfer.file.size}
                     status={transfer.status}
+                    retryRequested={transfer.retryRequested}
+                    retryProgress={transfer.retryProgress}
+                    retryReceived={transfer.retryReceived}
                   />
                 </div>
               );

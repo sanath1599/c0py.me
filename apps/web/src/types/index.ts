@@ -15,6 +15,10 @@ export interface FileTransfer {
   progress: number;
   speed?: number;
   timeRemaining?: number;
+  // Retry chunk tracking
+  retryRequested?: number; // Number of chunks requested for retry
+  retryProgress?: number; // Progress of retry chunks (0-100)
+  retryReceived?: number; // Number of retry chunks received
 }
 
 export interface SignalData {

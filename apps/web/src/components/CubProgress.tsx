@@ -10,6 +10,9 @@ interface CubProgressProps {
   timeRemaining?: number; // seconds
   fileSize?: number; // file size in bytes
   status?: string; // status of the task
+  retryRequested?: number; // Number of chunks requested for retry
+  retryProgress?: number; // Progress of retry chunks (0-100)
+  retryReceived?: number; // Number of retry chunks received
 }
 
 export const CubProgress: React.FC<CubProgressProps> = ({ 
@@ -19,7 +22,10 @@ export const CubProgress: React.FC<CubProgressProps> = ({
   speed,
   timeRemaining,
   fileSize,
-  status
+  status,
+  retryRequested,
+  retryProgress,
+  retryReceived
 }) => {
   // Clamp progress between 0 and 100
   const clampedProgress = Math.max(0, Math.min(100, progress));
@@ -97,6 +103,26 @@ export const CubProgress: React.FC<CubProgressProps> = ({
           </motion.div>
         )}
       </div>
+      {/* Retry Progress Bar (if retry is active) */}
+      {retryRequested && retryRequested > 0 && (
+        <div className="mt-3 space-y-1">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-blue-700">
+              🔄 Retrying {retryRequested} missing chunk{retryRequested !== 1 ? 's' : ''}
+            </span>
+            <span className="text-xs font-bold text-blue-800">
+              {retryReceived || 0}/{retryRequested} ({retryProgress || 0}%)
+            </span>
+          </div>
+          <div className="w-full h-2 bg-blue-100/50 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-300 ease-out"
+              style={{ width: `${Math.min(retryProgress || 0, 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+      
       {/* Progress Info */}
       <div className="mt-3 space-y-2">
         {/* Progress percentage - moved below progress bar */}
