@@ -77,7 +77,7 @@ export const CubProgress: React.FC<CubProgressProps> = ({
       <div className="w-full h-10 bg-white/30 rounded-full overflow-visible backdrop-blur-sm border border-white/40 shadow-inner flex items-center relative">
         {/* Progress Fill */}
         <motion.div
-          className="h-4 rounded-full relative fire-progress-bar"
+          className="h-4 rounded-full relative"
           style={{
             position: 'absolute',
             left: 0,

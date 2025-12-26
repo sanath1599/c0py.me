@@ -19,6 +19,7 @@ export interface FileTransfer {
   retryRequested?: number; // Number of chunks requested for retry
   retryProgress?: number; // Progress of retry chunks (0-100)
   retryReceived?: number; // Number of retry chunks received
+  isIncoming?: boolean; // Whether this is an incoming (receiving) or outgoing (sending) transfer
 }
 
 export interface SignalData {

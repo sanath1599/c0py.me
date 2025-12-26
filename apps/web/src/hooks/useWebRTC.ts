@@ -246,7 +246,8 @@ export const useWebRTC = (
       status: 'pending',
       progress: 0,
       speed: 0,
-      timeRemaining: 0
+      timeRemaining: 0,
+      isIncoming: false // This is an outgoing transfer
     }]);
 
     // Check if peer is online
@@ -1195,7 +1196,8 @@ export const useWebRTC = (
                           status: 'transferring',
                           progress: 0,
                           speed: 0,
-                          timeRemaining: 0
+                          timeRemaining: 0,
+                          isIncoming: true // This is an incoming transfer (file-start received)
                         }
                       ];
                     } else {
@@ -1968,7 +1970,8 @@ export const useWebRTC = (
         status: 'transferring',
         progress: 0,
         speed: 0,
-        timeRemaining: 0
+        timeRemaining: 0,
+        isIncoming: true // This is an incoming transfer
       }]);
       
       // Set up file receiving - this will be updated when file-start arrives

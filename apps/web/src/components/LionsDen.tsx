@@ -663,8 +663,9 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     // Only render Transfer Progress (current transfers)
     // Helper to determine if transfer is incoming or outgoing
     const isIncoming = (transfer: FileTransfer) => {
-      // Check if transfer ID starts with "receive-" (incoming) or if peer is sending to us
-      return transfer.id.startsWith('receive-');
+      // Check if this transfer matches any incoming file (by transferId)
+      // Incoming files use the sender's transferId, so if it matches, it's incoming
+      return incomingFiles.some(incomingFile => incomingFile.transferId === transfer.id);
     };
 
     return (
