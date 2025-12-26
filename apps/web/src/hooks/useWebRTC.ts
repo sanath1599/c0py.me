@@ -666,10 +666,64 @@ export const useWebRTC = (
                   console.log('📥 Receiving file:', message.name);
                   
                   // Determine if we should use IndexedDB (async operation)
+                  const transferId = `receive-${from}-${Date.now()}-${Math.random()}`;
+                  const startTime = Date.now();
+                  
+                  // Set up received file immediately (synchronously) to avoid race conditions
+                  receivedFilesRef.current.set(from, {
+                    name: message.name,
+                    size: message.size,
+                    type: message.fileType,
+                    receivedSize: 0,
+                    blobParts: [],
+                    startTime: startTime,
+                    lastProgressUpdate: 0,
+                    useIndexedDB: false, // Will be updated async
+                    transferId: transferId,
+                    chunkIndex: 0
+                  });
+                  
+                  // Add transfer immediately
+                  setTransfers(prev => {
+                    const alreadyExists = prev.some(t =>
+                      t.peer.id === from &&
+                      t.file.name === message.name &&
+                      t.file.type === message.fileType &&
+                      t.status !== 'completed' &&
+                      t.status !== 'failed'
+                    );
+                    if (!alreadyExists) {
+                      return [
+                        ...prev,
+                        {
+                          id: transferId,
+                          file: new File([new ArrayBuffer(message.size)], message.name, { type: message.fileType }),
+                          peer: { 
+                            id: from, 
+                            name: getPeerName(from), 
+                            emoji: '📱', 
+                            color: '#F6C148', 
+                            isOnline: true 
+                          },
+                          status: 'transferring',
+                          progress: 0,
+                          speed: 0,
+                          timeRemaining: 0
+                        }
+                      ];
+                    } else {
+                      return prev.map(t =>
+                        t.peer.id === from && t.file.name === message.name && t.file.type === message.fileType && t.status !== 'completed' && t.status !== 'failed'
+                          ? { ...t, status: 'transferring', progress: 0, id: transferId }
+                          : t
+                      );
+                    }
+                  });
+                  
+                  // Handle IndexedDB setup asynchronously (non-blocking)
                   (async () => {
                     const { INDEXEDDB_CONSTANTS } = await import('@sharedrop/config');
                     const shouldUseIDB = message.useIndexedDB && isMobileDevice() && message.size > INDEXEDDB_CONSTANTS.INDEXEDDB_MOBILE_THRESHOLD;
-                    const transferId = `receive-${from}-${Date.now()}-${Math.random()}`;
                     
                     if (shouldUseIDB) {
                       const { storeIncomingMetadata } = await import('../utils/indexedDB');
@@ -684,63 +738,17 @@ export const useWebRTC = (
                           chunkCount
                         });
                         console.log('📦 Storing incoming file metadata to IndexedDB');
+                        
+                        // Update the receivedFile to use IndexedDB
+                        const receivedFile = receivedFilesRef.current.get(from);
+                        if (receivedFile) {
+                          receivedFile.useIndexedDB = true;
+                        }
                       } catch (error) {
                         console.error('Failed to store metadata to IndexedDB:', error);
-                        // Fallback to memory
+                        // Continue with memory storage
                       }
                     }
-                    
-                    receivedFilesRef.current.set(from, {
-                      name: message.name,
-                      size: message.size,
-                      type: message.fileType,
-                      receivedSize: 0,
-                      blobParts: [],
-                      startTime: Date.now(),
-                      lastProgressUpdate: 0,
-                      useIndexedDB: shouldUseIDB || false,
-                      transferId: transferId,
-                      chunkIndex: 0
-                    });
-                    
-                    // Add or update transfer with the same transferId
-                    setTransfers(prev => {
-                      const alreadyExists = prev.some(t =>
-                        t.peer.id === from &&
-                        t.file.name === message.name &&
-                        t.file.type === message.fileType &&
-                        t.status !== 'completed' &&
-                        t.status !== 'failed'
-                      );
-                      if (alreadyExists) {
-                        // Update existing transfer
-                        return prev.map(t =>
-                          t.peer.id === from && t.file.name === message.name && t.file.type === message.fileType && t.status !== 'completed' && t.status !== 'failed'
-                            ? { ...t, status: 'transferring', progress: 0 }
-                            : t
-                        );
-                      } else {
-                        // Add new transfer
-                        return [
-                          ...prev,
-                          {
-                            id: transferId,
-                            file: new File([new ArrayBuffer(message.size)], message.name, { type: message.fileType }),
-                            peer: { 
-                              id: from, 
-                              name: getPeerName(from), 
-                              emoji: '📱', 
-                              color: '#F6C148', 
-                              isOnline: true 
-                            },
-                            status: 'transferring',
-                            progress: 0,
-                            speed: 0,
-                            timeRemaining: 0
-                          }
-                        ];
-                      }
-                    });
                   })();
                 } else if (message.type === 'file-end') {
                   const receivedFile = receivedFilesRef.current.get(from);
@@ -815,9 +823,20 @@ export const useWebRTC = (
             } else {
               // Binary data (file chunk)
               const receivedFile = receivedFilesRef.current.get(from);
-              if (receivedFile) {
-                // Store chunk to IndexedDB or memory
-                (async () => {
+              if (!receivedFile) {
+                console.warn('⚠️ Received chunk but no file metadata found for', from);
+                return;
+              }
+              
+              // Store chunk synchronously first, then handle async operations
+              const chunkSize = event.data.byteLength || (event.data as ArrayBuffer).byteLength || 0;
+              
+              // Update received size immediately
+              receivedFile.receivedSize += chunkSize;
+              
+              // Store chunk to IndexedDB or memory (async)
+              (async () => {
+                try {
                   if (receivedFile.useIndexedDB) {
                     const { storeIncomingChunk } = await import('../utils/indexedDB');
                     try {
@@ -831,40 +850,57 @@ export const useWebRTC = (
                   } else {
                     receivedFile.blobParts.push(event.data);
                   }
+                } catch (error) {
+                  console.error('Error storing chunk:', error);
+                  // Still add to blobParts as fallback
+                  receivedFile.blobParts.push(event.data);
+                }
+              })();
+              
+              // Throttled progress update (synchronous calculation, async state update)
+              const now = Date.now();
+              const { WEBRTC_CONSTANTS } = await import('@sharedrop/config');
+              const PROGRESS_UPDATE_INTERVAL = WEBRTC_CONSTANTS.PROGRESS_UPDATE_INTERVAL;
+              const PROGRESS_CHANGE_THRESHOLD = WEBRTC_CONSTANTS.PROGRESS_CHANGE_THRESHOLD;
+              
+              // Always update on first chunk or if enough time has passed
+              const shouldUpdate = receivedFile.lastProgressUpdate === 0 || 
+                                   (now - receivedFile.lastProgressUpdate) >= PROGRESS_UPDATE_INTERVAL;
+              
+              if (shouldUpdate) {
+                const progress = (receivedFile.receivedSize / receivedFile.size) * 100;
+                const lastProgress = receivedFile.lastProgressUpdate === 0 ? 0 : 
+                  ((receivedFile.receivedSize - chunkSize) / receivedFile.size) * 100;
+                
+                // Update if progress changed significantly or it's the first update
+                if (receivedFile.lastProgressUpdate === 0 || 
+                    Math.abs(progress - lastProgress) >= PROGRESS_CHANGE_THRESHOLD) {
+                  receivedFile.lastProgressUpdate = now;
+                  const elapsed = (now - receivedFile.startTime) / 1000;
+                  const speed = elapsed > 0 ? receivedFile.receivedSize / elapsed : 0;
+                  const timeRemaining = speed > 0 ? (receivedFile.size - receivedFile.receivedSize) / speed : 0;
                   
-                  receivedFile.receivedSize += event.data.byteLength;
+                  // Update transfer by transferId for more accurate matching
+                  const transferId = receivedFile.transferId;
+                  const currentProgress = Math.min(Math.round(progress * 10) / 10, 99.9);
+                  const currentSpeed = Math.round(speed);
+                  const currentTimeRemaining = Math.round(timeRemaining);
                   
-                  // Throttled progress update
-                  const now = Date.now();
-                  const { WEBRTC_CONSTANTS } = await import('@sharedrop/config');
-                  const PROGRESS_UPDATE_INTERVAL = WEBRTC_CONSTANTS.PROGRESS_UPDATE_INTERVAL;
-                  const PROGRESS_CHANGE_THRESHOLD = WEBRTC_CONSTANTS.PROGRESS_CHANGE_THRESHOLD;
-                  
-                  if ((now - receivedFile.lastProgressUpdate) >= PROGRESS_UPDATE_INTERVAL) {
-                    const progress = (receivedFile.receivedSize / receivedFile.size) * 100;
-                    const lastProgress = receivedFile.lastProgressUpdate === 0 ? 0 : 
-                      ((receivedFile.receivedSize - event.data.byteLength) / receivedFile.size) * 100;
-                    
-                    if (Math.abs(progress - lastProgress) >= PROGRESS_CHANGE_THRESHOLD || receivedFile.lastProgressUpdate === 0) {
-                      receivedFile.lastProgressUpdate = now;
-                      const elapsed = (now - receivedFile.startTime) / 1000;
-                      const speed = elapsed > 0 ? receivedFile.receivedSize / elapsed : 0;
-                      const timeRemaining = speed > 0 ? (receivedFile.size - receivedFile.receivedSize) / speed : 0;
-                      
-                      // Update transfer by transferId for more accurate matching
-                      requestAnimationFrame(() => {
-                        setTransfers(prev => prev.map(t => 
-                          t.id === receivedFile.transferId && t.status === 'transferring' ? { 
-                            ...t, 
-                            progress: Math.min(Math.round(progress * 10) / 10, 99.9), // Cap at 99.9% until complete
-                            speed: Math.round(speed),
-                            timeRemaining: Math.round(timeRemaining)
-                          } : t
-                        ));
-                      });
-                    }
-                  }
-                })();
+                  // Use setTimeout instead of requestAnimationFrame for more reliable updates
+                  setTimeout(() => {
+                    setTransfers(prev => prev.map(t => {
+                      if (t.id === transferId && t.status === 'transferring') {
+                        return { 
+                          ...t, 
+                          progress: currentProgress,
+                          speed: currentSpeed,
+                          timeRemaining: currentTimeRemaining
+                        };
+                      }
+                      return t;
+                    }));
+                  }, 0);
+                }
               }
             }
           };
