@@ -101,7 +101,12 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Determine mobile slide index based on state
+  // Track previous values to detect changes
+  const prevSelectedPeerRef = useRef<Peer | null>(null);
+  const prevSelectedFilesLengthRef = useRef<number>(0);
+  const prevHasActiveTransferRef = useRef<boolean>(false);
+  
+  // Determine mobile slide index based on state - progressive navigation
   useEffect(() => {
     if (!isMobile) return;
     
@@ -109,16 +114,51 @@ export const LionsDen: React.FC<LionsDenProps> = ({
       t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting'
     );
     
-    if (hasActiveTransfer) {
+    // Auto-advance to progress if transfer starts
+    if (hasActiveTransfer && !prevHasActiveTransferRef.current) {
       setMobileSlideIndex(3); // Transfer progress
-    } else if (selectedPeer && selectedFiles.length > 0) {
-      setMobileSlideIndex(2); // Send button
-    } else if (selectedPeer) {
-      setMobileSlideIndex(1); // File selection
-    } else {
-      setMobileSlideIndex(0); // Den
+      prevHasActiveTransferRef.current = true;
+      return;
     }
-  }, [isMobile, selectedPeer, selectedFiles.length, transfers]);
+    
+    // If no active transfer, allow progressive navigation
+    if (!hasActiveTransfer) {
+      prevHasActiveTransferRef.current = false;
+      
+      // Peer was just selected - advance to file selection
+      if (selectedPeer && !prevSelectedPeerRef.current && mobileSlideIndex === 0) {
+        setMobileSlideIndex(1);
+        prevSelectedPeerRef.current = selectedPeer;
+        return;
+      }
+      
+      // Files were just selected - advance to send button
+      if (selectedFiles.length > 0 && prevSelectedFilesLengthRef.current === 0 && selectedPeer && mobileSlideIndex === 1) {
+        setMobileSlideIndex(2);
+        prevSelectedFilesLengthRef.current = selectedFiles.length;
+        return;
+      }
+      
+      // Peer was cleared - go back to den
+      if (!selectedPeer && prevSelectedPeerRef.current) {
+        setMobileSlideIndex(0);
+        prevSelectedPeerRef.current = null;
+        prevSelectedFilesLengthRef.current = 0;
+        return;
+      }
+      
+      // Files were cleared - go back to file selection
+      if (selectedFiles.length === 0 && prevSelectedFilesLengthRef.current > 0 && selectedPeer && mobileSlideIndex === 2) {
+        setMobileSlideIndex(1);
+        prevSelectedFilesLengthRef.current = 0;
+        return;
+      }
+      
+      // Update refs
+      prevSelectedPeerRef.current = selectedPeer;
+      prevSelectedFilesLengthRef.current = selectedFiles.length;
+    }
+  }, [isMobile, selectedPeer, selectedFiles.length, transfers, mobileSlideIndex]);
 
   // Pulse animation for the den when transfers are active
   useEffect(() => {
@@ -201,6 +241,10 @@ export const LionsDen: React.FC<LionsDenProps> = ({
         return;
       }
       onSendFiles(selectedFiles, selectedPeer);
+      // Advance to progress screen after sending
+      if (isMobile) {
+        setMobileSlideIndex(3);
+      }
     }
   };
 
