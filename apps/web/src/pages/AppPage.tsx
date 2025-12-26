@@ -113,6 +113,7 @@ export const AppPage: React.FC = () => {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showLargeFileModal, setShowLargeFileModal] = useState(false);
   const [largeFileInfo, setLargeFileInfo] = useState<{ size: number; fileName?: string } | null>(null);
+  const [showMobileLargeFileWarning, setShowMobileLargeFileWarning] = useState(false);
 
   // Mobile detection
   useEffect(() => {
