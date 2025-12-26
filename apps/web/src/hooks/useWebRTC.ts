@@ -75,6 +75,7 @@ export const useWebRTC = (
     receivedChunkIndices: Set<number>;
     pendingChunkOperations: Promise<void>[]; // Track pending async chunk storage operations
     nextRetryChunkIndex?: number; // Track chunk index for retry chunks
+    nextChunkIndex?: number; // Track chunk index for regular chunks from metadata
     fileHandle?: FileSystemFileHandle; // File handle for streaming writes
     writableStream?: WritableStreamDefaultWriter<Uint8Array>; // Stream writer for direct file writes
     writeOffset: number; // Current write position in file
@@ -643,6 +644,21 @@ export const useWebRTC = (
           }));
         }
 
+        // Calculate chunk index based on offset
+        const chunkIndex = Math.floor(offset / CHUNK_SIZE);
+        
+        // Send chunk metadata before the chunk data
+        dataChannel.send(JSON.stringify({
+          type: 'chunk',
+          chunkIndex: chunkIndex,
+          transferId: transferId
+        }));
+        
+        // Log chunk sending for debugging (every 100 chunks or first/last)
+        if (chunkIndex === 0 || chunkIndex % 100 === 0 || offset + chunk.byteLength >= fileToSend.size) {
+          console.log(`📤 Sending chunk ${chunkIndex} (${chunk.byteLength} bytes, offset: ${offset}/${fileToSend.size})`);
+        }
+
         sendChunk(chunk);
       }
     };
@@ -1108,6 +1124,7 @@ export const useWebRTC = (
                       receivedChunkIndices: new Set<number>(),
                       pendingChunkOperations: [], // Track pending async chunk storage operations
                       nextRetryChunkIndex: undefined, // Track chunk index for retry chunks
+                      nextChunkIndex: undefined, // Track chunk index for regular chunks from metadata
                       fileHandle: undefined,
                       writableStream: undefined,
                       writeOffset: 0
@@ -1120,6 +1137,7 @@ export const useWebRTC = (
                     existingReceivedFile.receivedChunkIndices.clear();
                     existingReceivedFile.pendingChunkOperations = [];
                     existingReceivedFile.nextRetryChunkIndex = undefined;
+                    existingReceivedFile.nextChunkIndex = undefined; // Reset chunk index tracking
                     existingReceivedFile.writeOffset = 0; // Reset write offset
                     // Update sender's transferId if we have it
                     if (incomingFile?.transferId) {
@@ -1200,6 +1218,15 @@ export const useWebRTC = (
                       console.log(`📝 Small file (${(message.size / 1024 / 1024).toFixed(2)}MB) will use memory storage`);
                     }
                   })();
+                } else if (message.type === 'chunk') {
+                  // This is a metadata message before a regular chunk
+                  // The actual chunk will come as binary data next
+                  const receivedFile = receivedFilesRef.current.get(from);
+                  if (receivedFile && receivedFile.transferId === message.transferId) {
+                    receivedFile.nextChunkIndex = message.chunkIndex;
+                    console.log(`📦 Receiving chunk ${message.chunkIndex} for transfer ${message.transferId}`);
+                  }
+                  // The chunk will be handled in the binary data handler below
                 } else if (message.type === 'chunk-retry') {
                   // This is a metadata message before a retry chunk
                   // The actual chunk will come as binary data next
@@ -1232,61 +1259,65 @@ export const useWebRTC = (
                         }
                     
                     // Verify we received the complete file
-                        // Allow small tolerance for rounding errors (1 byte)
+                        // PRIMARY CHECK: Verify chunk indices (0 to expectedChunks-1)
+                        const missingChunkIndices: number[] = [];
+                        for (let i = 0; i < receivedFile.expectedChunks; i++) {
+                          if (!receivedFile.receivedChunkIndices.has(i)) {
+                            missingChunkIndices.push(i);
+                          }
+                        }
+                        
+                        // SECONDARY CHECK: Verify size (allow 1 byte tolerance for rounding)
                         const sizeDifference = Math.abs(receivedFile.receivedSize - receivedFile.size);
-                        if (sizeDifference > 1) {
-                          console.error(`❌ File size mismatch! Expected: ${receivedFile.size}, Received: ${receivedFile.receivedSize}, Difference: ${sizeDifference}`);
+                        const sizeMatches = sizeDifference <= 1;
+                        
+                        // If chunks are missing, request retry
+                        if (missingChunkIndices.length > 0) {
+                          console.error(`❌ Missing chunks detected! Expected: ${receivedFile.expectedChunks}, Received: ${receivedFile.receivedChunkIndices.size}, Missing: ${missingChunkIndices.length}`);
+                          console.error(`   Missing chunk indices: ${missingChunkIndices.slice(0, 20).join(', ')}${missingChunkIndices.length > 20 ? `... (${missingChunkIndices.length} total)` : ''}`);
+                          console.error(`   Size: ${receivedFile.receivedSize}/${receivedFile.size} bytes (difference: ${sizeDifference})`);
                           
-                          // Calculate which chunks might be missing based on size difference
-                          const chunkSize = receivedFile.size / receivedFile.expectedChunks;
-                          const missingBytes = receivedFile.size - receivedFile.receivedSize;
-                          const estimatedMissingChunks = Math.ceil(missingBytes / chunkSize);
-                          
-                          // Request retry for potentially missing chunks
+                          // Request retry for missing chunks
                           const dataChannel = dataChannelsRef.current.get(from);
                           if (dataChannel && dataChannel.readyState === 'open') {
-                            // Calculate missing chunk indices based on received chunks
-                            const missingChunkIndices: number[] = [];
-                            for (let i = 0; i < receivedFile.expectedChunks; i++) {
-                              if (!receivedFile.receivedChunkIndices.has(i)) {
-                                missingChunkIndices.push(i);
-                              }
+                            console.log(`🔄 Requesting retry for ${missingChunkIndices.length} missing chunks`);
+                            console.log(`   Using sender's transferId: ${receivedFile.senderTransferId || receivedFile.transferId}`);
+                            dataChannel.send(JSON.stringify({
+                              type: 'chunk-retry-request',
+                              transferId: receivedFile.senderTransferId || receivedFile.transferId, // Use sender's transferId
+                              chunkIndices: missingChunkIndices
+                            }));
+                            
+                            setTransfers(prev => prev.map(t => 
+                              t.id === receivedFile.transferId && t.status === 'transferring' 
+                                ? { ...t, status: 'transferring' } // Keep as transferring during retry
+                                : t
+                            ));
+                            
+                            if (addToast) {
+                              addToast('info', `Requesting retry for ${missingChunkIndices.length} missing chunks...`);
                             }
                             
-                            if (missingChunkIndices.length > 0) {
-                              console.log(`🔄 Requesting retry for ${missingChunkIndices.length} missing chunks`);
-                              console.log(`   Using sender's transferId: ${receivedFile.senderTransferId || receivedFile.transferId}`);
-                              dataChannel.send(JSON.stringify({
-                                type: 'chunk-retry-request',
-                                transferId: receivedFile.senderTransferId || receivedFile.transferId, // Use sender's transferId
-                                chunkIndices: missingChunkIndices
-                              }));
-                              
-                      setTransfers(prev => prev.map(t => 
-                        t.id === receivedFile.transferId && t.status === 'transferring' 
-                                  ? { ...t, status: 'transferring' } // Keep as transferring during retry
-                          : t
-                      ));
-                              
-                      if (addToast) {
-                                addToast('info', `Requesting retry for ${missingChunkIndices.length} missing chunks...`);
-                      }
-                              
-                              // Don't return - wait for retry chunks
-                      return;
-                    }
+                            // Don't return - wait for retry chunks
+                            return;
                           }
                           
                           // If we can't retry, mark as failed
-                        setTransfers(prev => prev.map(t => 
-                          t.id === receivedFile.transferId && t.status === 'transferring' 
-                            ? { ...t, status: 'failed' } 
-                            : t
-                        ));
-                        if (addToast) {
-                            addToast('error', `File transfer incomplete: ${receivedFile.name} (size mismatch: ${sizeDifference} bytes)`);
+                          setTransfers(prev => prev.map(t => 
+                            t.id === receivedFile.transferId && t.status === 'transferring' 
+                              ? { ...t, status: 'failed' } 
+                              : t
+                          ));
+                          if (addToast) {
+                            addToast('error', `File transfer incomplete: ${receivedFile.name} (missing ${missingChunkIndices.length} chunks)`);
+                          }
+                          return;
                         }
-                        return;
+                        
+                        // If size doesn't match but all chunks are present, log warning but proceed
+                        if (!sizeMatches) {
+                          console.warn(`⚠️ Size mismatch but all chunks present: expected ${receivedFile.size}, received ${receivedFile.receivedSize} (difference: ${sizeDifference} bytes)`);
+                          // Still proceed - might be rounding error or last chunk size difference
                         }
                         
                         // Verify chunks - prioritize size check over chunk index tracking
@@ -1486,11 +1517,12 @@ export const useWebRTC = (
               
               // Store chunk to IndexedDB or memory (async, non-blocking)
               // For large files, prioritize IndexedDB; for small files, use memory
-              // Check if this is a retry chunk (has specific index) or a regular sequential chunk
+              // Check if this is a retry chunk (has specific index) or a regular chunk with metadata
               let currentChunkIndex: number;
               let isRetryChunk = false;
+              
               if (receivedFile.nextRetryChunkIndex !== undefined) {
-                // This is a retry chunk - use the specific index
+                // This is a retry chunk - use the specific index from metadata
                 currentChunkIndex = receivedFile.nextRetryChunkIndex;
                 receivedFile.nextRetryChunkIndex = undefined; // Clear it
                 isRetryChunk = true;
@@ -1506,8 +1538,26 @@ export const useWebRTC = (
                   // New chunk - add to received indices
                   receivedFile.receivedChunkIndices.add(currentChunkIndex);
                 }
+              } else if (receivedFile.nextChunkIndex !== undefined) {
+                // Regular chunk with metadata - use the index from metadata
+                currentChunkIndex = receivedFile.nextChunkIndex;
+                receivedFile.nextChunkIndex = undefined; // Clear it
+                
+                // Log chunk receiving for debugging (every 100 chunks or first/last)
+                if (currentChunkIndex === 0 || currentChunkIndex % 100 === 0 || receivedFile.receivedSize + chunkSize >= receivedFile.size) {
+                  console.log(`📦 Processing chunk ${currentChunkIndex}/${receivedFile.expectedChunks} (${chunkSize} bytes, received: ${receivedFile.receivedSize}/${receivedFile.size})`);
+                }
+                
+                // Add to received indices
+                if (!receivedFile.receivedChunkIndices.has(currentChunkIndex)) {
+                  receivedFile.receivedChunkIndices.add(currentChunkIndex);
+                } else {
+                  console.warn(`⚠️ Chunk ${currentChunkIndex} already received - replacing (duplicate chunk detected)`);
+                }
               } else {
-                // Regular sequential chunk
+                // Fallback: no metadata received, use sequential counter (shouldn't happen with new implementation)
+                console.warn(`⚠️ No chunk index metadata found for chunk, using sequential counter (chunkIndex: ${receivedFile.chunkIndex})`);
+                console.warn(`   This should not happen with the new implementation - chunk metadata may be missing`);
                 currentChunkIndex = receivedFile.chunkIndex;
                 receivedFile.chunkIndex++;
                 receivedFile.receivedChunkIndices.add(currentChunkIndex);
@@ -1818,6 +1868,7 @@ export const useWebRTC = (
         receivedChunkIndices: new Set<number>(),
         pendingChunkOperations: [],
         nextRetryChunkIndex: undefined,
+        nextChunkIndex: undefined, // Track chunk index for regular chunks from metadata
         fileHandle: fileHandle,
         writableStream: writableStream,
         writeOffset: writeOffset
