@@ -73,8 +73,18 @@ export const useWebRTC = (
     expectedChunks: number;
     receivedChunkIndices: Set<number>;
     pendingChunkOperations: Promise<void>[]; // Track pending async chunk storage operations
+    nextRetryChunkIndex?: number; // Track chunk index for retry chunks
   }>>(new Map());
   const pendingFilesRef = useRef<Map<string, { file: File; peer: any; transferId: string }>>(new Map());
+  // Track active file transfers for retry capability
+  const activeTransfersRef = useRef<Map<string, {
+    file: File;
+    fileId?: string;
+    useIndexedDB: boolean;
+    chunkSize: number;
+    dataChannel: RTCDataChannel;
+    transferId: string;
+  }>>(new Map());
   const [completedReceived, setCompletedReceived] = useState<Array<{
     id: string;
     file: File;
@@ -346,6 +356,18 @@ export const useWebRTC = (
                 t.id === transferId ? { ...t, status: 'cancelled' } : t
               ));
               pendingFilesRef.current.delete(transferId);
+            } else if (message.type === 'chunk-retry-request' && message.transferId === transferId) {
+              console.log(`🔄 Received retry request for ${message.chunkIndices?.length || 0} chunks`);
+              
+              if (message.chunkIndices && Array.isArray(message.chunkIndices) && message.chunkIndices.length > 0) {
+                // Update transfer status to show retry
+                setTransfers(prev => prev.map(t => 
+                  t.id === transferId ? { ...t, status: 'transferring' } : t
+                ));
+                
+                // Resend the requested chunks
+                resendChunks(transferId, message.chunkIndices);
+              }
             }
           } catch (error) {
             console.error('❌ Error parsing message:', error);
@@ -452,6 +474,16 @@ export const useWebRTC = (
     const PROGRESS_UPDATE_INTERVAL = WEBRTC_CONSTANTS.PROGRESS_UPDATE_INTERVAL;
     const PROGRESS_CHANGE_THRESHOLD = WEBRTC_CONSTANTS.PROGRESS_CHANGE_THRESHOLD;
     
+    // Store file reference for retry capability
+    activeTransfersRef.current.set(transferId, {
+      file: fileToSend,
+      fileId,
+      useIndexedDB: useIndexedDB || false,
+      chunkSize: CHUNK_SIZE,
+      dataChannel,
+      transferId
+    });
+    
     const reader = new FileReader();
     let offset = 0;
     const startTime = Date.now();
@@ -556,6 +588,11 @@ export const useWebRTC = (
             });
           }
           
+          // Keep transfer reference for potential retries (clean up after timeout)
+          setTimeout(() => {
+            activeTransfersRef.current.delete(transferId);
+          }, 60000); // Keep for 60 seconds after completion for retries
+          
           console.log('✅ File transfer completed - keeping data channel open for future transfers');
         }
       } catch (error) {
@@ -596,6 +633,85 @@ export const useWebRTC = (
     };
 
     readSlice();
+  };
+
+  // Function to resend specific chunks by index
+  const resendChunks = async (
+    transferId: string,
+    chunkIndices: number[]
+  ) => {
+    const transfer = activeTransfersRef.current.get(transferId);
+    if (!transfer) {
+      console.error(`❌ Transfer ${transferId} not found for retry`);
+      return;
+    }
+
+    const { dataChannel, file, fileId, useIndexedDB, chunkSize } = transfer;
+    
+    if (dataChannel.readyState !== 'open') {
+      console.error(`❌ Data channel not open for retry: ${dataChannel.readyState}`);
+      return;
+    }
+
+    console.log(`🔄 Retrying ${chunkIndices.length} chunks for transfer ${transferId}`);
+    
+    let fileToSend = file;
+    
+    // Load from IndexedDB if needed
+    if (useIndexedDB && fileId) {
+      try {
+        const { getOutgoingFile } = await import('../utils/indexedDB');
+        fileToSend = await getOutgoingFile(fileId);
+      } catch (error) {
+        console.error('❌ Failed to load file from IndexedDB for retry:', error);
+        return;
+      }
+    }
+
+    const reader = new FileReader();
+    let chunksSent = 0;
+
+    const sendChunkByIndex = (chunkIndex: number) => {
+      const startOffset = chunkIndex * chunkSize;
+      const endOffset = Math.min(startOffset + chunkSize, fileToSend.size);
+      const slice = fileToSend.slice(startOffset, endOffset);
+      
+      reader.onload = (event) => {
+        if (event.target?.result && dataChannel.readyState === 'open') {
+          const chunk = event.target.result as ArrayBuffer;
+          
+          // Send retry chunk with metadata
+          dataChannel.send(JSON.stringify({
+            type: 'chunk-retry',
+            chunkIndex: chunkIndex,
+            transferId: transferId
+          }));
+          
+          dataChannel.send(chunk);
+          chunksSent++;
+          
+          console.log(`✅ Resent chunk ${chunkIndex} (${chunk.byteLength} bytes)`);
+          
+          // Send next chunk if any remaining
+          if (chunksSent < chunkIndices.length) {
+            sendChunkByIndex(chunkIndices[chunksSent]);
+          } else {
+            console.log(`✅ Finished resending ${chunksSent} chunks`);
+          }
+        }
+      };
+      
+      reader.onerror = () => {
+        console.error(`❌ Error reading chunk ${chunkIndex} for retry`);
+      };
+      
+      reader.readAsArrayBuffer(slice);
+    };
+
+    // Start sending chunks
+    if (chunkIndices.length > 0) {
+      sendChunkByIndex(chunkIndices[0]);
+    }
   };
 
   // Helper function to process file reconstruction after verification
@@ -840,7 +956,8 @@ export const useWebRTC = (
                     chunkIndex: 0,
                     expectedChunks: expectedChunks,
                     receivedChunkIndices: new Set<number>(),
-                    pendingChunkOperations: [] // Track pending async chunk storage operations
+                    pendingChunkOperations: [], // Track pending async chunk storage operations
+                    nextRetryChunkIndex: undefined // Track chunk index for retry chunks
                   });
                   
                   // Add transfer immediately
@@ -916,6 +1033,15 @@ export const useWebRTC = (
                       console.log(`📝 Small file (${(message.size / 1024 / 1024).toFixed(2)}MB) will use memory storage`);
                     }
                   })();
+                } else if (message.type === 'chunk-retry') {
+                  // This is a metadata message before a retry chunk
+                  // The actual chunk will come as binary data next
+                  const receivedFile = receivedFilesRef.current.get(from);
+                  if (receivedFile && receivedFile.transferId === message.transferId) {
+                    receivedFile.nextRetryChunkIndex = message.chunkIndex;
+                    console.log(`🔄 Receiving retry chunk ${message.chunkIndex} for transfer ${message.transferId}`);
+                  }
+                  // The chunk will be handled in the binary data handler below
                 } else if (message.type === 'file-end') {
                   const receivedFile = receivedFilesRef.current.get(from);
                   if (receivedFile) {
@@ -943,6 +1069,47 @@ export const useWebRTC = (
                         const sizeDifference = Math.abs(receivedFile.receivedSize - receivedFile.size);
                         if (sizeDifference > 1) {
                           console.error(`❌ File size mismatch! Expected: ${receivedFile.size}, Received: ${receivedFile.receivedSize}, Difference: ${sizeDifference}`);
+                          
+                          // Calculate which chunks might be missing based on size difference
+                          const chunkSize = receivedFile.size / receivedFile.expectedChunks;
+                          const missingBytes = receivedFile.size - receivedFile.receivedSize;
+                          const estimatedMissingChunks = Math.ceil(missingBytes / chunkSize);
+                          
+                          // Request retry for potentially missing chunks
+                          const dataChannel = dataChannelsRef.current.get(from);
+                          if (dataChannel && dataChannel.readyState === 'open') {
+                            // Calculate missing chunk indices based on received chunks
+                            const missingChunkIndices: number[] = [];
+                            for (let i = 0; i < receivedFile.expectedChunks; i++) {
+                              if (!receivedFile.receivedChunkIndices.has(i)) {
+                                missingChunkIndices.push(i);
+                              }
+                            }
+                            
+                            if (missingChunkIndices.length > 0) {
+                              console.log(`🔄 Requesting retry for ${missingChunkIndices.length} missing chunks`);
+                              dataChannel.send(JSON.stringify({
+                                type: 'chunk-retry-request',
+                                transferId: receivedFile.transferId,
+                                chunkIndices: missingChunkIndices
+                              }));
+                              
+                              setTransfers(prev => prev.map(t => 
+                                t.id === receivedFile.transferId && t.status === 'transferring' 
+                                  ? { ...t, status: 'transferring' } // Keep as transferring during retry
+                                  : t
+                              ));
+                              
+                              if (addToast) {
+                                addToast('info', `Requesting retry for ${missingChunkIndices.length} missing chunks...`);
+                              }
+                              
+                              // Don't return - wait for retry chunks
+                              return;
+                            }
+                          }
+                          
+                          // If we can't retry, mark as failed
                           setTransfers(prev => prev.map(t => 
                             t.id === receivedFile.transferId && t.status === 'transferring' 
                               ? { ...t, status: 'failed' } 
@@ -1007,6 +1174,31 @@ export const useWebRTC = (
                                 console.error(`   Expected: ${receivedFile.expectedChunks}, Found: ${chunks.length}, Missing: ${missing.length}`);
                                 console.error(`   Received size: ${receivedFile.receivedSize}, Expected: ${receivedFile.size}, Difference: ${receivedFile.size - receivedFile.receivedSize}`);
                                 
+                                // Request retry for missing chunks
+                                const dataChannel = dataChannelsRef.current.get(from);
+                                if (dataChannel && dataChannel.readyState === 'open') {
+                                  console.log(`🔄 Requesting retry for ${missing.length} missing chunks`);
+                                  dataChannel.send(JSON.stringify({
+                                    type: 'chunk-retry-request',
+                                    transferId: receivedFile.transferId,
+                                    chunkIndices: missing
+                                  }));
+                                  
+                                  setTransfers(prev => prev.map(t => 
+                                    t.id === receivedFile.transferId && t.status === 'transferring' 
+                                      ? { ...t, status: 'transferring' } // Keep as transferring during retry
+                                      : t
+                                  ));
+                                  
+                                  if (addToast) {
+                                    addToast('info', `Requesting retry for ${missing.length} missing chunks...`);
+                                  }
+                                  
+                                  // Don't return - wait for retry chunks
+                                  return;
+                                }
+                                
+                                // If we can't retry, mark as failed
                                 setTransfers(prev => prev.map(t => 
                                   t.id === receivedFile.transferId && t.status === 'transferring' 
                                     ? { ...t, status: 'failed' } 
@@ -1084,10 +1276,32 @@ export const useWebRTC = (
               
               // Store chunk to IndexedDB or memory (async, non-blocking)
               // For large files, prioritize IndexedDB; for small files, use memory
-              // IMPORTANT: Increment chunkIndex immediately to ensure sequential tracking
-              const currentChunkIndex = receivedFile.chunkIndex;
-              receivedFile.chunkIndex++;
-              receivedFile.receivedChunkIndices.add(currentChunkIndex);
+              // Check if this is a retry chunk (has specific index) or a regular sequential chunk
+              let currentChunkIndex: number;
+              let isRetryChunk = false;
+              if (receivedFile.nextRetryChunkIndex !== undefined) {
+                // This is a retry chunk - use the specific index
+                currentChunkIndex = receivedFile.nextRetryChunkIndex;
+                receivedFile.nextRetryChunkIndex = undefined; // Clear it
+                isRetryChunk = true;
+                console.log(`🔄 Processing retry chunk ${currentChunkIndex} (${chunkSize} bytes)`);
+                
+                // For retry chunks, we might be replacing existing data
+                // Adjust receivedSize if this chunk was already counted
+                if (receivedFile.receivedChunkIndices.has(currentChunkIndex)) {
+                  // This chunk was already received - we're replacing it
+                  // Don't double-count the size, but do update the chunk data
+                  console.log(`   Replacing existing chunk ${currentChunkIndex}`);
+                } else {
+                  // New chunk - add to received indices
+                  receivedFile.receivedChunkIndices.add(currentChunkIndex);
+                }
+              } else {
+                // Regular sequential chunk
+                currentChunkIndex = receivedFile.chunkIndex;
+                receivedFile.chunkIndex++;
+                receivedFile.receivedChunkIndices.add(currentChunkIndex);
+              }
               
               if (receivedFile.useIndexedDB) {
                 // Store to IndexedDB asynchronously, but track the promise
@@ -1099,6 +1313,19 @@ export const useWebRTC = (
                     // Log progress for large files every 100 chunks
                     if (receivedFile.expectedChunks > 100 && currentChunkIndex % 100 === 0) {
                       console.log(`📦 Stored chunk ${currentChunkIndex}/${receivedFile.expectedChunks} to IndexedDB`);
+                    }
+                    
+                    // If this was a retry chunk and we're now complete, re-verify
+                    if (isRetryChunk && receivedFile.receivedSize >= receivedFile.size) {
+                      console.log(`🔄 Retry chunk received, re-verifying file completion...`);
+                      // Trigger re-verification by sending a file-end-like check
+                      setTimeout(async () => {
+                        const sizeMatches = Math.abs(receivedFile.receivedSize - receivedFile.size) <= 1;
+                        if (sizeMatches) {
+                          console.log(`✅ File complete after retry - proceeding with reconstruction`);
+                          await processFileReconstruction(receivedFile, from);
+                        }
+                      }, 500);
                     }
                   } catch (error) {
                     console.error(`Failed to store chunk ${currentChunkIndex} to IndexedDB:`, error);
@@ -1119,7 +1346,16 @@ export const useWebRTC = (
                 });
               } else {
                 // Store to memory synchronously for small files
-                receivedFile.blobParts.push(event.data);
+                // For retry chunks, replace the chunk at the correct index if it exists
+                if (isRetryChunk && currentChunkIndex < receivedFile.blobParts.length) {
+                  receivedFile.blobParts[currentChunkIndex] = event.data;
+                } else {
+                  // Ensure array is large enough, then set at index
+                  while (receivedFile.blobParts.length <= currentChunkIndex) {
+                    receivedFile.blobParts.push(new ArrayBuffer(0));
+                  }
+                  receivedFile.blobParts[currentChunkIndex] = event.data;
+                }
               }
               
               // Throttled progress update (synchronous calculation, async state update)
@@ -1295,7 +1531,8 @@ export const useWebRTC = (
         chunkIndex: 0,
         expectedChunks: 0, // Will be set when file-start is received
         receivedChunkIndices: new Set<number>(),
-        pendingChunkOperations: []
+        pendingChunkOperations: [],
+        nextRetryChunkIndex: undefined
       });
       
       console.log('✅ File acceptance sent, transfer started');
