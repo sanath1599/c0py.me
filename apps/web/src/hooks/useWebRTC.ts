@@ -234,12 +234,6 @@ export const useWebRTC = (
 
     const config = calculateChunkConfig(file.size, detectDeviceType());
 
-    // Show modal notification for large files
-    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
-    if (file.size >= LARGE_FILE_THRESHOLD && onLargeFileTransfer) {
-      onLargeFileTransfer(file.size, file.name);
-    }
-
     // Store send context
     robustSendContextRef.current.set(transferId, {
       file,
@@ -374,7 +368,8 @@ export const useWebRTC = (
               ...t, 
               progress: Math.round(progress),
               speed: Math.round(speed),
-              timeRemaining: Math.round(timeRemaining)
+              timeRemaining: Math.round(timeRemaining),
+              bytesTransferred: Math.round(bytesTransferred)
             } : t
           ));
         }
@@ -689,12 +684,6 @@ export const useWebRTC = (
       totalChunks
     };
 
-    // Show modal notification for large files
-    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
-    if (manifest.fileSize >= LARGE_FILE_THRESHOLD && onLargeFileTransfer) {
-      onLargeFileTransfer(manifest.fileSize, manifest.fileName);
-    }
-
     // Store receive context
     receivedFilesRef.current.set(from, {
       name: manifest.fileName,
@@ -808,7 +797,8 @@ export const useWebRTC = (
         ...t, 
         progress: Math.round(progress),
         speed: Math.round(speed),
-        timeRemaining: Math.round(timeRemaining)
+        timeRemaining: Math.round(timeRemaining),
+        bytesTransferred: Math.round(bytesReceived)
       } : t
     ));
 
@@ -941,6 +931,12 @@ export const useWebRTC = (
 
   const sendFile = useCallback(async (file: File, peer: Peer) => {
     console.log(`📤 Sending file ${file.name} to ${peer.name}`);
+    
+    // Show modal notification for large files (non-blocking, appears immediately)
+    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+    if (file.size >= LARGE_FILE_THRESHOLD && onLargeFileTransfer) {
+      onLargeFileTransfer(file.size, file.name);
+    }
     
     // Check if there's already a transfer in progress
     const activeTransfers = transfers.filter(t => 
@@ -1201,7 +1197,7 @@ export const useWebRTC = (
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
     }
-  }, [connections, createPeerConnection, onSignal, userId, storePendingRequest, isConnected, transfers, addToast, sendFileRobust, handleManifestAck, handleResendRequest, handleTransferComplete, handleTransferFailed]);
+  }, [connections, createPeerConnection, onSignal, userId, storePendingRequest, isConnected, transfers, addToast, sendFileRobust, handleManifestAck, handleResendRequest, handleTransferComplete, handleTransferFailed, onLargeFileTransfer]);
 
   // Legacy chunk sending (fallback)
   const sendFileInChunksLegacy = (dataChannel: RTCDataChannel, file: File, transferId: string) => {
@@ -1244,7 +1240,8 @@ export const useWebRTC = (
             ...t, 
             progress: Math.round(progress),
             speed: Math.round(speed),
-            timeRemaining: Math.round(timeRemaining)
+            timeRemaining: Math.round(timeRemaining),
+            bytesTransferred: Math.round(offset)
           } : t
         ));
 
@@ -1326,7 +1323,8 @@ export const useWebRTC = (
                     ...t, 
                     progress: Math.round(progress),
                     speed: Math.round(speed),
-                    timeRemaining: Math.round(timeRemaining)
+                    timeRemaining: Math.round(timeRemaining),
+                    bytesTransferred: Math.round(totalReceived)
                   } : t
                 ));
               }
@@ -1531,6 +1529,12 @@ export const useWebRTC = (
     
     console.log('✅ Accepting incoming file:', incomingFile);
     
+    // Show modal notification for large files (non-blocking, appears immediately)
+    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+    if (incomingFile.fileSize >= LARGE_FILE_THRESHOLD && onLargeFileTransfer) {
+      onLargeFileTransfer(incomingFile.fileSize, incomingFile.fileName);
+    }
+    
     const dataChannel = dataChannelsRef.current.get(incomingFile.from);
     if (!dataChannel) {
       console.error('❌ Data channel not found for sender:', incomingFile.from);
@@ -1575,7 +1579,7 @@ export const useWebRTC = (
     } else {
       console.error('❌ Data channel not open, state:', dataChannel.readyState);
     }
-  }, [incomingFiles, getPeerName]);
+  }, [incomingFiles, getPeerName, onLargeFileTransfer]);
 
   const rejectIncomingFile = useCallback((incomingFileId: string) => {
     const incomingFile = incomingFiles.find(f => f.id === incomingFileId);

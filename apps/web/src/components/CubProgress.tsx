@@ -9,6 +9,7 @@ interface CubProgressProps {
   speed?: number; // bytes per second
   timeRemaining?: number; // seconds
   fileSize?: number; // file size in bytes
+  bytesTransferred?: number; // bytes transferred so far
   status?: string; // status of the task
 }
 
@@ -19,10 +20,14 @@ export const CubProgress: React.FC<CubProgressProps> = ({
   speed,
   timeRemaining,
   fileSize,
+  bytesTransferred,
   status
 }) => {
   // Clamp progress between 0 and 100
   const clampedProgress = Math.max(0, Math.min(100, progress));
+  
+  // Calculate transferred bytes if not provided
+  const transferred = bytesTransferred ?? (fileSize ? (clampedProgress / 100) * fileSize : 0);
   
   // Format speed
   const formatSpeed = (bytesPerSecond: number) => {
@@ -107,9 +112,13 @@ export const CubProgress: React.FC<CubProgressProps> = ({
         </div>
         {/* File size, speed, and ETA or status icon */}
         <div className="flex justify-between items-center">
-          {/* File size */}
+          {/* File size - show transferred / total */}
           <div className="text-sm font-semibold text-orange-700 bg-orange-100/50 px-2 py-1 rounded">
-            {fileSize ? formatFileSize(fileSize) : 'Unknown size'}
+            {fileSize ? (
+              `${formatFileSize(transferred)} / ${formatFileSize(fileSize)}`
+            ) : (
+              transferred > 0 ? formatFileSize(transferred) : 'Unknown size'
+            )}
           </div>
           {/* Speed and ETA or status icon */}
           <div className="flex gap-3">

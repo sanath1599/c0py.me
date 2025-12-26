@@ -5,7 +5,7 @@ import { Avatar } from './Avatar';
 import { CubProgress } from './CubProgress';
 import { Peer, FileTransfer } from '../types';
 import { formatFileSize } from '../utils/format';
-import { Send, X, CheckCircle, AlertCircle, Loader, File } from 'lucide-react';
+import { Send, X, CheckCircle, AlertCircle, Loader, File, Search } from 'lucide-react';
 import { IncomingFileModal } from './IncomingFileModal';
 import { logUserAction } from '../utils/eventLogger';
 
@@ -16,6 +16,7 @@ interface LionsDenProps {
   selectedFiles: File[];
   transfers: FileTransfer[];
   currentWorld?: 'jungle' | 'room' | 'family';
+  currentRoom?: string;
   incomingFiles: Array<{
     id: string;
     from: string;
@@ -43,6 +44,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   selectedFiles,
   transfers,
   currentWorld,
+  currentRoom,
   incomingFiles,
   onPeerClick,
   onSendFiles,
@@ -59,10 +61,32 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [hoveredPeer, setHoveredPeer] = useState<string | null>(null);
   const [denPulse, setDenPulse] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const transferProgressRef = useRef<HTMLDivElement>(null);
   const prevActiveTransfersRef = useRef(0);
-  const otherPeers = peers.filter(peer => peer.id !== currentUser.id);
+  
+  // Filter peers based on search query - always scoped to current room
+  const filteredPeers = React.useMemo(() => {
+    const otherPeers = peers.filter(p => p.id !== currentUser.id);
+    
+    // Always filter by current room first
+    const roomPeers = currentRoom 
+      ? otherPeers.filter(p => p.roomId === currentRoom)
+      : otherPeers;
+    
+    // Then apply search query if provided
+    if (searchQuery.trim()) {
+      return roomPeers.filter(p =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.id.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    
+    return roomPeers;
+  }, [peers, currentUser.id, searchQuery, currentRoom]);
+  
+  const otherPeers = filteredPeers;
   const isRoomOwner = currentUser.name.toLowerCase().includes('lion') || currentUser.emoji === '🦁';
 
   // Pulse animation for the den when transfers are active
@@ -76,25 +100,6 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     setDenPulse(otherPeers.length > 0);
   }, [otherPeers.length]);
 
-  // Auto-scroll to transfer progress on mobile when transfer starts
-  useEffect(() => {
-    const activeTransfers = transfers.filter(t => t.status === 'transferring').length;
-    const prevActive = prevActiveTransfersRef.current;
-    
-    // If a new transfer started (active transfers increased)
-    if (activeTransfers > prevActive && transferProgressRef.current) {
-      // Check if we're on mobile (screen width < 768px)
-      if (window.innerWidth < 768) {
-        // Smooth scroll to transfer progress section
-        transferProgressRef.current.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start'
-        });
-      }
-    }
-    
-    prevActiveTransfersRef.current = activeTransfers;
-  }, [transfers]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -172,6 +177,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   // Helper to check if there are active transfers
   const hasActiveTransfers = transfers.some(t => t.status === 'transferring');
 
+
   // Transfer Progress Box
   const transferProgressBox = (
     <GlassCard className="p-6 w-full max-w-xl mx-auto z-50">
@@ -217,6 +223,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                 speed={transfer.speed}
                 timeRemaining={transfer.timeRemaining}
                 fileSize={transfer.file.size}
+                bytesTransferred={transfer.bytesTransferred}
                 status={transfer.status}
               />
             </div>
@@ -234,19 +241,42 @@ export const LionsDen: React.FC<LionsDenProps> = ({
           <h2 className="text-xl font-bold" style={{ color: '#2C1B12' }}>
             {isRoomOwner ? "Big Lion's Den" : "Lion's Den"}
           </h2>
-          <div className="flex gap-2" style={{ zIndex: 50, position: 'relative' }}>
-            <button
-              onClick={onEditProfile}
-              className="p-2 rounded-lg transition-colors"
-              style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)', color: '#A6521B' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
+        </div>
+
+        {/* Search Bar */}
+        <div className="mb-4" style={{ zIndex: 50, position: 'relative' }}>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#A6521B', opacity: 0.6 }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => {
+                setSearchQuery(e.target.value);
+                if (e.target.value.length > 0) {
+                  logUserAction.peerSelected('search', 'search_query');
+                }
+              }}
+              placeholder={
+                currentWorld === 'jungle' 
+                  ? "Search by name or user ID..." 
+                  : currentWorld === 'room'
+                  ? "Search room members..."
+                  : currentWorld === 'family'
+                  ? "Search family members..."
+                  : "Search peers..."
+              }
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-orange-200 bg-white/60 backdrop-blur-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-300 text-sm"
+              style={{ color: '#2C1B12' }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/40 transition-colors"
+                style={{ color: '#A6521B' }}
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -255,7 +285,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
           <div className="grid grid-cols-2 gap-4 text-center">
             <div>
               <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
-                {peers.length}
+                {filteredPeers.length + 1}
               </div>
               <div className="text-sm" style={{ color: '#A6521B' }}>
                 Total Lions
@@ -263,7 +293,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
             </div>
             <div>
               <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
-                {peers.filter(p => p.isOnline).length}
+                {filteredPeers.filter(p => p.isOnline).length + 1}
               </div>
               <div className="text-sm" style={{ color: '#A6521B' }}>
                 Online Now
@@ -305,7 +335,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
           {/* Cubs around the den */}
           {otherPeers.length > 0 && (
             <div className="absolute w-full h-full flex items-center justify-center">
-              <div className="relative w-full h-full" style={{ minWidth: 256, minHeight: 256 }}>
+              <div className="relative w-full h-full" style={{ minWidth: '256px', minHeight: '256px' }}>
                 {otherPeers.map((peer, idx) => {
                   const angle = (idx / otherPeers.length) * 2 * Math.PI;
                   const radius = 110;
@@ -361,10 +391,23 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                 size="xl"
               />
             </motion.div>
-            <div className="mt-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm border z-30 w-full break-words whitespace-normal text-center" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
+            <div className="mt-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm border z-30 w-full break-words whitespace-normal flex items-center justify-center gap-2" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
               <span className="text-sm font-medium" style={{ color: '#2C1B12' }}>
                 You ({currentUser.name})
               </span>
+              <button
+                onClick={onEditProfile}
+                className="p-1 rounded transition-colors flex-shrink-0"
+                style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)', color: '#A6521B' }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
+                title="Edit Profile"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -689,6 +732,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                     speed={transfer.speed}
                     timeRemaining={transfer.timeRemaining}
                     fileSize={transfer.file.size}
+                    bytesTransferred={transfer.bytesTransferred}
                     status={transfer.status}
                   />
                 </div>

@@ -15,6 +15,7 @@ export interface FileTransfer {
   progress: number;
   speed?: number;
   timeRemaining?: number;
+  bytesTransferred?: number; // bytes transferred so far
 }
 
 export interface SignalData {

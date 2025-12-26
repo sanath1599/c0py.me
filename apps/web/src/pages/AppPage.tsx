@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { LionsDen } from '../components/LionsDen';
+import { MobileApp } from '../components/MobileApp';
 import { ProfileModal } from '../components/ProfileModal';
 import { RoomModal } from '../components/RoomModal';
 import { FamilyPrivacyNotice } from '../components/FamilyPrivacyNotice';
@@ -21,6 +22,7 @@ import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
 import { NetworkErrorModal } from '../components/NetworkErrorModal';
 import { LargeFileModal } from '../components/LargeFileModal';
+import { MobileLargeFileWarningModal } from '../components/MobileLargeFileWarningModal';
 import Confetti from 'react-confetti';
 
 const WORLD_OPTIONS = [
@@ -36,6 +38,7 @@ export const AppPage: React.FC = () => {
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => ({
     id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name: generateRandomUsername(),
@@ -103,7 +106,6 @@ export const AppPage: React.FC = () => {
   const [transferTimes, setTransferTimes] = useState<Record<string, { start: number; end?: number; duration?: number }>>({});
 
   const [selectedWorld, setSelectedWorld] = useState<WorldType | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showFamilyNotice, setShowFamilyNotice] = useState(false);
   const [pendingWorld, setPendingWorld] = useState<WorldType | null>(null);
@@ -111,6 +113,41 @@ export const AppPage: React.FC = () => {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showLargeFileModal, setShowLargeFileModal] = useState(false);
   const [largeFileInfo, setLargeFileInfo] = useState<{ size: number; fileName?: string } | null>(null);
+  const [showMobileLargeFileWarning, setShowMobileLargeFileWarning] = useState(false);
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Preload network error image so it's available when network goes down
+  useEffect(() => {
+    const preloadImage = (src: string) => {
+      return new Promise<void>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          console.log('✅ Network error image preloaded');
+          resolve();
+        };
+        img.onerror = () => {
+          console.warn('⚠️ Failed to preload network error image:', src);
+          reject(new Error(`Failed to preload image: ${src}`));
+        };
+        // Set src after handlers to ensure they're attached
+        img.src = src;
+      });
+    };
+    
+    // Preload the network error image immediately on mount
+    preloadImage('/network_error.png').catch(() => {
+      // Silently handle preload failures - image will load when needed
+    });
+  }, []);
 
   // Join rooms when connection is established
   useEffect(() => {
@@ -120,6 +157,13 @@ export const AppPage: React.FC = () => {
       }
     }
   }, [isConnected, selectedWorld, currentUser, joinDefaultRoom]);
+
+  // Reset mobile warning flag when incoming files change
+  useEffect(() => {
+    if (incomingFiles.length === 0) {
+      setShowMobileLargeFileWarning(false);
+    }
+  }, [incomingFiles.length]);
 
   // Show modal when a new completed transfer is added
   useEffect(() => {
@@ -458,22 +502,7 @@ export const AppPage: React.FC = () => {
   </div>
 );
 
-// Filter peers based on selected world
-const filteredPeers = React.useMemo(() => {
-  const otherPeers = peers.filter(p => p.id !== currentUser.id);
-  
-  if (selectedWorld === 'jungle') {
-    return otherPeers.filter(p =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.id.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  } else if (selectedWorld === 'room' || selectedWorld === 'family') {
-    // For Room and Family, only show peers in the same room
-    return otherPeers.filter(p => p.roomId === currentRoom);
-  }
-  
-  return otherPeers;
-}, [peers, currentUser.id, searchQuery, selectedWorld, currentRoom]);
+// Note: Peer filtering (including search) is now handled inside LionsDen component
 
   // Modal open state
   const isAnyModalOpen = !selectedWorld || showRoomModal || showFamilyNotice || showProfileModal || showTransferModal;
@@ -647,29 +676,6 @@ const filteredPeers = React.useMemo(() => {
       {/* Main content */}
       {selectedWorld && (
         <main className="p-0 md:p-0 w-full">
-          {/* Search Bar */}
-          {selectedWorld && (
-            <div className="mb-6 flex justify-center px-4 md:px-8">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => {
-                  setSearchQuery(e.target.value);
-                  if (e.target.value.length > 0) {
-                    logUserAction.peerSelected('search', 'search_query');
-                  }
-                }}
-                placeholder={
-                  selectedWorld === 'jungle' 
-                    ? "Search by name or user ID..." 
-                    : selectedWorld === 'room'
-                    ? "Search room members..."
-                    : "Search family members..."
-                }
-                className="w-full max-w-md px-4 py-2 rounded-xl border border-orange-200 bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-lg"
-              />
-            </div>
-          )}
 
           {/* --- New Three-Row Layout --- */}
 
@@ -678,12 +684,13 @@ const filteredPeers = React.useMemo(() => {
             <div className="w-full px-4 md:px-8 mb-8">
               <div className="max-w-md md:max-w-full mx-auto">
                 <LionsDen
-                peers={filteredPeers}
+                peers={peers}
                 currentUser={currentUser}
                 selectedPeer={selectedPeer}
                 selectedFiles={selectedFiles}
                 transfers={transfers}
                 currentWorld={selectedWorld}
+                currentRoom={currentRoom}
                 incomingFiles={incomingFiles}
                 onPeerClick={handlePeerClick}
                 onSendFiles={handleSendFiles}
@@ -701,16 +708,43 @@ const filteredPeers = React.useMemo(() => {
             </div>
           )}
 
-          {/* Row 2: 3-column grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full px-4 md:px-8 mb-8">
-            {/* Lion's Den (Radar + No cubs text) */}
-            <LionsDen
-              peers={filteredPeers}
+          {/* Mobile App */}
+          {isMobile ? (
+            <div className="w-full px-4 mb-8">
+              <MobileApp
+                peers={peers}
+                currentUser={currentUser}
+                selectedPeer={selectedPeer}
+                selectedFiles={selectedFiles}
+                transfers={transfers}
+                currentWorld={selectedWorld}
+                currentRoom={currentRoom}
+                incomingFiles={incomingFiles}
+                onPeerClick={handlePeerClick}
+                onSendFiles={handleSendFiles}
+                onCancelTransfer={handleCancelTransfer}
+                onClearSelection={handleClearSelection}
+                onFilesSelected={handleFilesSelected}
+                onFileRemove={handleFileRemove}
+                onEditProfile={() => setShowProfileModal(true)}
+                onAcceptIncomingFile={acceptIncomingFile}
+                onRejectIncomingFile={rejectIncomingFile}
+                transferTimes={transferTimes}
+              />
+            </div>
+          ) : (
+            <>
+              {/* Row 2: 3-column grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full px-4 md:px-8 mb-8">
+                {/* Lion's Den (Radar + No cubs text) */}
+                <LionsDen
+              peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
               selectedFiles={selectedFiles}
               transfers={transfers}
               currentWorld={selectedWorld}
+              currentRoom={currentRoom}
               incomingFiles={incomingFiles}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
@@ -725,12 +759,13 @@ const filteredPeers = React.useMemo(() => {
             />
             {/* Select Prey (Files) */}
             <LionsDen
-              peers={filteredPeers}
+              peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
               selectedFiles={selectedFiles}
               transfers={transfers}
               currentWorld={selectedWorld}
+              currentRoom={currentRoom}
               incomingFiles={incomingFiles}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
@@ -745,12 +780,13 @@ const filteredPeers = React.useMemo(() => {
             />
             {/* Target Cub */}
             <LionsDen
-              peers={filteredPeers}
+              peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
               selectedFiles={selectedFiles}
               transfers={transfers}
               currentWorld={selectedWorld}
+              currentRoom={currentRoom}
               incomingFiles={incomingFiles}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
@@ -763,17 +799,18 @@ const filteredPeers = React.useMemo(() => {
               onRejectIncomingFile={rejectIncomingFile}
               mode="target"
             />
-          </div>
+              </div>
 
-          {/* Row 3: Transfer History Table (completed transfers only) */}
-          <div className="w-full px-0 md:px-0 mb-8">
-            <LionsDen
-              peers={filteredPeers}
+              {/* Row 3: Transfer History Table (completed transfers only) */}
+              <div className="w-full px-0 md:px-0 mb-8">
+                <LionsDen
+              peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
               selectedFiles={selectedFiles}
               transfers={transfers}
               currentWorld={selectedWorld}
+              currentRoom={currentRoom}
               incomingFiles={incomingFiles}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
@@ -784,19 +821,47 @@ const filteredPeers = React.useMemo(() => {
               onEditProfile={() => setShowProfileModal(true)}
               onAcceptIncomingFile={acceptIncomingFile}
               onRejectIncomingFile={rejectIncomingFile}
-              mode="history"
-              transferTimes={transferTimes}
-            />
-          </div>
+                mode="history"
+                transferTimes={transferTimes}
+              />
+              </div>
+            </>
+          )}
 
           {/* Incoming File Modal (always visible when needed) */}
           {incomingFiles && incomingFiles.length > 0 && (
-            <IncomingFileModal
-              isOpen={true}
-              file={incomingFiles[0]}
-              onAccept={() => acceptIncomingFile(incomingFiles[0].id)}
-              onReject={() => rejectIncomingFile(incomingFiles[0].id)}
-            />
+            <>
+              {/* Show mobile warning first if on mobile and file >90MB */}
+              {isMobile && incomingFiles[0].fileSize > 90 * 1024 * 1024 && !showMobileLargeFileWarning ? (
+                <MobileLargeFileWarningModal
+                  isOpen={true}
+                  fileSize={incomingFiles[0].fileSize}
+                  fileName={incomingFiles[0].fileName}
+                  onClose={() => {
+                    setShowMobileLargeFileWarning(true);
+                    // After closing warning, show the regular incoming file modal
+                  }}
+                  onContinue={() => {
+                    setShowMobileLargeFileWarning(true);
+                    // Continue to accept the file
+                    acceptIncomingFile(incomingFiles[0].id);
+                  }}
+                />
+              ) : (
+                <IncomingFileModal
+                  isOpen={true}
+                  file={incomingFiles[0]}
+                  onAccept={() => {
+                    setShowMobileLargeFileWarning(false);
+                    acceptIncomingFile(incomingFiles[0].id);
+                  }}
+                  onReject={() => {
+                    setShowMobileLargeFileWarning(false);
+                    rejectIncomingFile(incomingFiles[0].id);
+                  }}
+                />
+              )}
+            </>
           )}
         </main>
       )}
