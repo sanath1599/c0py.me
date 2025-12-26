@@ -360,17 +360,36 @@ export const useWebRTC = (
                 t.id === transferId ? { ...t, status: 'cancelled' } : t
               ));
               pendingFilesRef.current.delete(transferId);
-            } else if (message.type === 'chunk-retry-request' && message.transferId === transferId) {
-              console.log(`🔄 Received retry request for ${message.chunkIndices?.length || 0} chunks`);
+            } else if (message.type === 'chunk-retry-request') {
+              console.log(`🔄 Received retry request`);
+              console.log(`   Requested transferId: ${message.transferId}`);
+              console.log(`   Current transferId: ${transferId}`);
+              console.log(`   Chunk indices: ${message.chunkIndices?.length || 0}`);
               
-              if (message.chunkIndices && Array.isArray(message.chunkIndices) && message.chunkIndices.length > 0) {
+              // Try to match by transferId (could be sender's or receiver's)
+              // First try exact match, then search in activeTransfersRef
+              let matchingTransferId = message.transferId === transferId ? transferId : null;
+              
+              if (!matchingTransferId) {
+                // Search in activeTransfersRef for matching transferId
+                matchingTransferId = Array.from(activeTransfersRef.current.keys()).find(id => id === message.transferId) || null;
+              }
+              
+              if (matchingTransferId && message.chunkIndices && Array.isArray(message.chunkIndices) && message.chunkIndices.length > 0) {
+                console.log(`✅ Found matching transfer (${matchingTransferId}), resending ${message.chunkIndices.length} chunks`);
+                
                 // Update transfer status to show retry
                 setTransfers(prev => prev.map(t => 
                   t.id === transferId ? { ...t, status: 'transferring' } : t
                 ));
                 
-                // Resend the requested chunks
-                resendChunks(transferId, message.chunkIndices);
+                // Resend the requested chunks using the matching transferId
+                resendChunks(matchingTransferId, message.chunkIndices);
+              } else {
+                console.error(`❌ Could not find matching transfer for retry request`);
+                console.error(`   Requested transferId: ${message.transferId}`);
+                console.error(`   Current transferId: ${transferId}`);
+                console.error(`   Available transfers: ${Array.from(activeTransfersRef.current.keys()).join(', ')}`);
               }
             }
           } catch (error) {
@@ -677,49 +696,70 @@ export const useWebRTC = (
       }
     }
 
-    const reader = new FileReader();
-    let chunksSent = 0;
-
-    const sendChunkByIndex = (chunkIndex: number) => {
-      const startOffset = chunkIndex * chunkSize;
-      const endOffset = Math.min(startOffset + chunkSize, fileToSend.size);
-      const slice = fileToSend.slice(startOffset, endOffset);
-      
-      reader.onload = (event) => {
-        if (event.target?.result && dataChannel.readyState === 'open') {
-          const chunk = event.target.result as ArrayBuffer;
+    // Send chunks sequentially to avoid FileReader conflicts
+    const sendChunksSequentially = async () => {
+      for (let i = 0; i < chunkIndices.length; i++) {
+        const chunkIndex = chunkIndices[i];
+        const startOffset = chunkIndex * chunkSize;
+        const endOffset = Math.min(startOffset + chunkSize, fileToSend.size);
+        const slice = fileToSend.slice(startOffset, endOffset);
+        
+        try {
+          // Read chunk as ArrayBuffer
+          const chunk = await new Promise<ArrayBuffer>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              if (event.target?.result) {
+                resolve(event.target.result as ArrayBuffer);
+              } else {
+                reject(new Error('Failed to read chunk'));
+              }
+            };
+            reader.onerror = () => {
+              reject(new Error(`Error reading chunk ${chunkIndex}`));
+            };
+            reader.readAsArrayBuffer(slice);
+          });
           
-          // Send retry chunk with metadata
+          // Check data channel is still open
+          if (dataChannel.readyState !== 'open') {
+            console.error(`❌ Data channel closed during retry at chunk ${chunkIndex}`);
+            break;
+          }
+          
+          // Send retry chunk with metadata first
           dataChannel.send(JSON.stringify({
             type: 'chunk-retry',
             chunkIndex: chunkIndex,
             transferId: transferId
           }));
           
+          // Small delay to ensure metadata is processed before chunk
+          await new Promise(resolve => setTimeout(resolve, 10));
+          
+          // Send the chunk data
           dataChannel.send(chunk);
-          chunksSent++;
           
-          console.log(`✅ Resent chunk ${chunkIndex} (${chunk.byteLength} bytes)`);
+          console.log(`✅ Resent chunk ${chunkIndex}/${chunkIndices.length} (${chunk.byteLength} bytes)`);
           
-          // Send next chunk if any remaining
-          if (chunksSent < chunkIndices.length) {
-            sendChunkByIndex(chunkIndices[chunksSent]);
-          } else {
-            console.log(`✅ Finished resending ${chunksSent} chunks`);
+          // Small delay between chunks to avoid overwhelming the channel
+          if (i < chunkIndices.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 50));
           }
+        } catch (error) {
+          console.error(`❌ Error sending retry chunk ${chunkIndex}:`, error);
+          // Continue with next chunk even if one fails
         }
-      };
+      }
       
-      reader.onerror = () => {
-        console.error(`❌ Error reading chunk ${chunkIndex} for retry`);
-      };
-      
-      reader.readAsArrayBuffer(slice);
+      console.log(`✅ Finished resending ${chunkIndices.length} chunks`);
     };
 
     // Start sending chunks
     if (chunkIndices.length > 0) {
-      sendChunkByIndex(chunkIndices[0]);
+      sendChunksSequentially().catch(error => {
+        console.error('❌ Error in retry chunk sequence:', error);
+      });
     }
   };
 
@@ -885,9 +925,40 @@ export const useWebRTC = (
       // Play success sound
       playSuccessSound();
       
-      // Show success notification
-      if (addToast) {
-        addToast('success', `File received: ${receivedFile.name} from ${getPeerName(from)}`);
+      // On mobile/iOS, automatically trigger download since File System Access API isn't available
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      
+      if ((isMobile || isIOS) && !receivedFile.fileHandle) {
+        // Automatically trigger download on mobile
+        try {
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = receivedFile.name;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          
+          setTimeout(() => {
+            document.body.removeChild(link);
+          }, 100);
+          
+          console.log('📥 Auto-downloaded file on mobile/iOS');
+          if (addToast) {
+            addToast('success', `File downloaded: ${receivedFile.name}`);
+          }
+        } catch (downloadError) {
+          console.error('❌ Auto-download failed:', downloadError);
+          if (addToast) {
+            addToast('success', `File received: ${receivedFile.name} (tap to download)`);
+          }
+        }
+      } else {
+        // Show success notification for desktop
+        if (addToast) {
+          addToast('success', `File received: ${receivedFile.name} from ${getPeerName(from)}`);
+        }
       }
       
       if ('Notification' in window && Notification.permission === 'granted') {
@@ -1351,11 +1422,24 @@ export const useWebRTC = (
                                 : t
                             ));
                             
+                            // Track file received
+                            logSystemEvent.fileReceived(receivedFile.type, receivedFile.size);
+                            
+                            // Play success sound
+                            playSuccessSound();
+                            
                             // Clean up
                             receivedFilesRef.current.delete(from);
                             
                             if (addToast) {
                               addToast('success', `File saved: ${receivedFile.name}`);
+                            }
+                            
+                            if ('Notification' in window && Notification.permission === 'granted') {
+                              new Notification('File Saved', {
+                                body: `Successfully saved ${receivedFile.name} to disk`,
+                                icon: '/favicon.ico'
+                              });
                             }
                             
                             return; // Don't proceed with reconstruction - file is already saved

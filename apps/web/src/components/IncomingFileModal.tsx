@@ -30,7 +30,13 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
   const senderName = (file as any).fromName || file.from;
   
   // Check if File System Access API is available
-  const hasFileSystemAccess = 'showSaveFilePicker' in window && window.isSecureContext;
+  // Note: iOS Safari and most mobile browsers don't support this API
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const hasFileSystemAccess = 'showSaveFilePicker' in window && 
+                              window.isSecureContext && 
+                              !isIOS; // iOS doesn't support File System Access API
 
   return (
     <AnimatePresence>
@@ -65,7 +71,9 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
                 <p className="text-xs text-orange-700/80">{formatFileSize(file.fileSize)}</p>
                 {!hasFileSystemAccess && (
                   <p className="text-xs text-orange-600/70 mt-2 px-2 py-1 bg-orange-50/50 rounded">
-                    Note: File will be saved to browser storage (choose download location after transfer)
+                    {isIOS || isMobile 
+                      ? 'File will download automatically after transfer completes'
+                      : 'File will be saved to browser storage (choose download location after transfer)'}
                   </p>
                 )}
               </div>
@@ -117,11 +125,20 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
                         }
                       }
                     } else {
-                      console.warn('⚠️ File System Access API not available');
-                      console.warn('   Browser may not support showSaveFilePicker');
-                      console.warn('   File will be saved to memory/IndexedDB instead');
+                      if (isIOS) {
+                        console.log('ℹ️ iOS detected - File System Access API not supported');
+                        console.log('   File will be downloaded automatically after transfer completes');
+                      } else if (isMobile) {
+                        console.log('ℹ️ Mobile device detected - File System Access API may not be supported');
+                        console.log('   File will be downloaded automatically after transfer completes');
+                      } else {
+                        console.warn('⚠️ File System Access API not available');
+                        console.warn('   Browser may not support showSaveFilePicker');
+                        console.warn('   File will be saved to memory/IndexedDB instead');
+                      }
                     }
                     
+                    // Always proceed - on mobile/iOS, file will be downloaded after completion
                     onAccept(fileHandle);
                   }}
                   className="flex-1 py-3 rounded-xl bg-white/40 border border-orange-200 text-orange-900 font-bold text-lg shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all hover:scale-105 backdrop-blur-[8px] relative overflow-hidden"
