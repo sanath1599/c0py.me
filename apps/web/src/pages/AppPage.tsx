@@ -103,7 +103,6 @@ export const AppPage: React.FC = () => {
   const [transferTimes, setTransferTimes] = useState<Record<string, { start: number; end?: number; duration?: number }>>({});
 
   const [selectedWorld, setSelectedWorld] = useState<WorldType | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showFamilyNotice, setShowFamilyNotice] = useState(false);
   const [pendingWorld, setPendingWorld] = useState<WorldType | null>(null);
@@ -458,22 +457,7 @@ export const AppPage: React.FC = () => {
   </div>
 );
 
-// Filter peers based on selected world
-const filteredPeers = React.useMemo(() => {
-  const otherPeers = peers.filter(p => p.id !== currentUser.id);
-  
-  if (selectedWorld === 'jungle') {
-    return otherPeers.filter(p =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.id.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  } else if (selectedWorld === 'room' || selectedWorld === 'family') {
-    // For Room and Family, only show peers in the same room
-    return otherPeers.filter(p => p.roomId === currentRoom);
-  }
-  
-  return otherPeers;
-}, [peers, currentUser.id, searchQuery, selectedWorld, currentRoom]);
+// Note: Peer filtering (including search) is now handled inside LionsDen component
 
   // Modal open state
   const isAnyModalOpen = !selectedWorld || showRoomModal || showFamilyNotice || showProfileModal || showTransferModal;
@@ -647,29 +631,6 @@ const filteredPeers = React.useMemo(() => {
       {/* Main content */}
       {selectedWorld && (
         <main className="p-0 md:p-0 w-full">
-          {/* Search Bar */}
-          {selectedWorld && (
-            <div className="mb-6 flex justify-center px-4 md:px-8">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => {
-                  setSearchQuery(e.target.value);
-                  if (e.target.value.length > 0) {
-                    logUserAction.peerSelected('search', 'search_query');
-                  }
-                }}
-                placeholder={
-                  selectedWorld === 'jungle' 
-                    ? "Search by name or user ID..." 
-                    : selectedWorld === 'room'
-                    ? "Search room members..."
-                    : "Search family members..."
-                }
-                className="w-full max-w-md px-4 py-2 rounded-xl border border-orange-200 bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-lg"
-              />
-            </div>
-          )}
 
           {/* --- New Three-Row Layout --- */}
 
@@ -678,12 +639,13 @@ const filteredPeers = React.useMemo(() => {
             <div className="w-full px-4 md:px-8 mb-8">
               <div className="max-w-md md:max-w-full mx-auto">
                 <LionsDen
-                peers={filteredPeers}
+                peers={peers}
                 currentUser={currentUser}
                 selectedPeer={selectedPeer}
                 selectedFiles={selectedFiles}
                 transfers={transfers}
                 currentWorld={selectedWorld}
+                currentRoom={currentRoom}
                 incomingFiles={incomingFiles}
                 onPeerClick={handlePeerClick}
                 onSendFiles={handleSendFiles}
@@ -705,12 +667,13 @@ const filteredPeers = React.useMemo(() => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full px-4 md:px-8 mb-8">
             {/* Lion's Den (Radar + No cubs text) */}
             <LionsDen
-              peers={filteredPeers}
+              peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
               selectedFiles={selectedFiles}
               transfers={transfers}
               currentWorld={selectedWorld}
+              currentRoom={currentRoom}
               incomingFiles={incomingFiles}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
@@ -725,12 +688,13 @@ const filteredPeers = React.useMemo(() => {
             />
             {/* Select Prey (Files) */}
             <LionsDen
-              peers={filteredPeers}
+              peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
               selectedFiles={selectedFiles}
               transfers={transfers}
               currentWorld={selectedWorld}
+              currentRoom={currentRoom}
               incomingFiles={incomingFiles}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
@@ -745,12 +709,13 @@ const filteredPeers = React.useMemo(() => {
             />
             {/* Target Cub */}
             <LionsDen
-              peers={filteredPeers}
+              peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
               selectedFiles={selectedFiles}
               transfers={transfers}
               currentWorld={selectedWorld}
+              currentRoom={currentRoom}
               incomingFiles={incomingFiles}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
@@ -768,12 +733,13 @@ const filteredPeers = React.useMemo(() => {
           {/* Row 3: Transfer History Table (completed transfers only) */}
           <div className="w-full px-0 md:px-0 mb-8">
             <LionsDen
-              peers={filteredPeers}
+              peers={peers}
               currentUser={currentUser}
               selectedPeer={selectedPeer}
               selectedFiles={selectedFiles}
               transfers={transfers}
               currentWorld={selectedWorld}
+              currentRoom={currentRoom}
               incomingFiles={incomingFiles}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}

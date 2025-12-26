@@ -5,7 +5,7 @@ import { Avatar } from './Avatar';
 import { CubProgress } from './CubProgress';
 import { Peer, FileTransfer } from '../types';
 import { formatFileSize } from '../utils/format';
-import { Send, X, CheckCircle, AlertCircle, Loader, File, ArrowLeft, ChevronLeft } from 'lucide-react';
+import { Send, X, CheckCircle, AlertCircle, Loader, File, ArrowLeft, ChevronLeft, Search } from 'lucide-react';
 import { IncomingFileModal } from './IncomingFileModal';
 import { logUserAction } from '../utils/eventLogger';
 
@@ -16,6 +16,7 @@ interface LionsDenProps {
   selectedFiles: File[];
   transfers: FileTransfer[];
   currentWorld?: 'jungle' | 'room' | 'family';
+  currentRoom?: string;
   incomingFiles: Array<{
     id: string;
     from: string;
@@ -43,6 +44,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   selectedFiles,
   transfers,
   currentWorld,
+  currentRoom,
   incomingFiles,
   onPeerClick,
   onSendFiles,
@@ -61,10 +63,32 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   const [denPulse, setDenPulse] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileSlideIndex, setMobileSlideIndex] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const transferProgressRef = useRef<HTMLDivElement>(null);
   const prevActiveTransfersRef = useRef(0);
-  const otherPeers = peers.filter(peer => peer.id !== currentUser.id);
+  
+  // Filter peers based on search query - always scoped to current room
+  const filteredPeers = React.useMemo(() => {
+    const otherPeers = peers.filter(p => p.id !== currentUser.id);
+    
+    // Always filter by current room first
+    const roomPeers = currentRoom 
+      ? otherPeers.filter(p => p.roomId === currentRoom)
+      : otherPeers;
+    
+    // Then apply search query if provided
+    if (searchQuery.trim()) {
+      return roomPeers.filter(p =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.id.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    
+    return roomPeers;
+  }, [peers, currentUser.id, searchQuery, currentRoom]);
+  
+  const otherPeers = filteredPeers;
   const isRoomOwner = currentUser.name.toLowerCase().includes('lion') || currentUser.emoji === '🦁';
 
   // Detect mobile and handle resize
@@ -230,6 +254,43 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                   <h2 className="text-xl font-bold" style={{ color: '#2C1B12' }}>
                     {isRoomOwner ? "Big Lion's Den" : "Lion's Den"}
                   </h2>
+                </div>
+
+                {/* Search Bar */}
+                <div className="mb-4" style={{ zIndex: 50, position: 'relative' }}>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#A6521B', opacity: 0.6 }} />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => {
+                        setSearchQuery(e.target.value);
+                        if (e.target.value.length > 0) {
+                          logUserAction.peerSelected('search', 'search_query');
+                        }
+                      }}
+                      placeholder={
+                        currentWorld === 'jungle' 
+                          ? "Search by name or user ID..." 
+                          : currentWorld === 'room'
+                          ? "Search room members..."
+                          : currentWorld === 'family'
+                          ? "Search family members..."
+                          : "Search peers..."
+                      }
+                      className="w-full pl-10 pr-4 py-2 rounded-lg border border-orange-200 bg-white/60 backdrop-blur-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-300 text-sm"
+                      style={{ color: '#2C1B12' }}
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/40 transition-colors"
+                        style={{ color: '#A6521B' }}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Online Statistics */}
