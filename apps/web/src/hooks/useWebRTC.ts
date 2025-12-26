@@ -295,16 +295,35 @@ export const useWebRTC = (
     const ctx = robustSendContextRef.current.get(transferId);
     if (!ctx) return;
 
+    // Check if data channel is already closed
+    if (dataChannel.readyState !== 'open') {
+      console.log(`⚠️ Data channel not open (state: ${dataChannel.readyState}), cannot send chunks`);
+      setTransfers(prev => prev.map(t => 
+        t.id === transferId ? { ...t, status: 'failed' } : t
+      ));
+      robustSendContextRef.current.delete(transferId);
+      return;
+    }
+
     ctx.isPaused = false;
     console.log(`🚀 Starting chunk transfer...`);
 
-    const sendSingleChunk = async (sequence: number): Promise<boolean> => {
-      if (dataChannel.readyState !== 'open') return false;
+    const sendSingleChunk = async (sequence: number): Promise<'sent' | 'channel_closed' | 'error'> => {
+      // Always check channel state before sending
+      if (dataChannel.readyState !== 'open') {
+        console.log(`⚠️ Data channel closed during transfer (state: ${dataChannel.readyState})`);
+        return 'channel_closed';
+      }
       
       const chunk = await generateChunk(ctx.file, sequence, ctx.chunkSize);
       const binaryChunk = createBinaryChunk(chunk, chunk.data);
 
       try {
+        // Double-check state right before sending
+        if (dataChannel.readyState !== 'open') {
+          return 'channel_closed';
+        }
+        
         dataChannel.send(binaryChunk);
         ctx.sentChunks.add(sequence);
         
@@ -328,22 +347,36 @@ export const useWebRTC = (
           ));
         }
         
-        return true;
-      } catch (error) {
+        return 'sent';
+      } catch (error: any) {
+        // Check if this is a channel closed error
+        if (error?.name === 'InvalidStateError' || 
+            error?.message?.includes('not \'open\'') ||
+            dataChannel.readyState !== 'open') {
+          console.log(`⚠️ Data channel closed, stopping transfer`);
+          return 'channel_closed';
+        }
+        
         console.error(`❌ Error sending chunk ${sequence}:`, error);
         if (!ctx.pendingResends.includes(sequence)) {
           ctx.pendingResends.push(sequence);
         }
-        return false;
+        return 'error';
       }
     };
 
-    // Wait for buffer to drain
-    const waitForBuffer = (): Promise<void> => {
+    // Wait for buffer to drain (with channel state check)
+    const waitForBuffer = (): Promise<boolean> => {
       return new Promise((resolve) => {
         const check = () => {
+          // Check if channel is still open
+          if (dataChannel.readyState !== 'open') {
+            resolve(false);
+            return;
+          }
+          
           if (dataChannel.bufferedAmount < 64 * 1024) {
-            resolve();
+            resolve(true);
           } else {
             setTimeout(check, 50);
           }
@@ -354,7 +387,7 @@ export const useWebRTC = (
           const originalHandler = dataChannel.onbufferedamountlow;
           dataChannel.onbufferedamountlow = () => {
             dataChannel.onbufferedamountlow = originalHandler;
-            resolve();
+            resolve(dataChannel.readyState === 'open');
           };
         } else {
           check();
@@ -364,44 +397,111 @@ export const useWebRTC = (
 
     // Process resends first
     while (ctx.pendingResends.length > 0 && !ctx.isPaused) {
+      // Check channel state before each resend
+      if (dataChannel.readyState !== 'open') {
+        console.log(`⚠️ Data channel closed during resend, aborting transfer`);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+        return;
+      }
+      
       const seq = ctx.pendingResends.shift()!;
       ctx.sentChunks.delete(seq); // Remove so we can resend
-      await sendSingleChunk(seq);
+      const result = await sendSingleChunk(seq);
       
-      if (dataChannel.bufferedAmount > 1024 * 1024) {
-        await waitForBuffer();
+      if (result === 'channel_closed') {
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+        return;
+      }
+      
+      if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > 1024 * 1024) {
+        const canContinue = await waitForBuffer();
+        if (!canContinue) {
+          setTransfers(prev => prev.map(t => 
+            t.id === transferId ? { ...t, status: 'failed' } : t
+          ));
+          robustSendContextRef.current.delete(transferId);
+          return;
+        }
       }
     }
 
     // Send remaining chunks
     for (let seq = 0; seq < ctx.totalChunks && !ctx.isPaused; seq++) {
+      // Check channel state before each chunk
+      if (dataChannel.readyState !== 'open') {
+        console.log(`⚠️ Data channel closed during chunk sending, aborting transfer`);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+        return;
+      }
+      
       if (!ctx.sentChunks.has(seq)) {
-        await sendSingleChunk(seq);
+        const result = await sendSingleChunk(seq);
         
-        // Flow control
-        if (dataChannel.bufferedAmount > 1024 * 1024) {
+        if (result === 'channel_closed') {
+          setTransfers(prev => prev.map(t => 
+            t.id === transferId ? { ...t, status: 'failed' } : t
+          ));
+          robustSendContextRef.current.delete(transferId);
+          return;
+        }
+        
+        // Flow control (with state check)
+        if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > 1024 * 1024) {
           console.log(`⏸️ Buffer full, waiting...`);
-          await waitForBuffer();
+          const canContinue = await waitForBuffer();
+          if (!canContinue) {
+            setTransfers(prev => prev.map(t => 
+              t.id === transferId ? { ...t, status: 'failed' } : t
+            ));
+            robustSendContextRef.current.delete(transferId);
+            return;
+          }
         }
       }
     }
 
-    // All chunks sent
+    // All chunks sent - verify channel is still open before sending end message
     if (ctx.sentChunks.size === ctx.totalChunks && ctx.pendingResends.length === 0) {
+      if (dataChannel.readyState !== 'open') {
+        console.log(`⚠️ Data channel closed before sending transfer-end`);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+        return;
+      }
+      
       console.log(`📤 All chunks sent, sending transfer-end`);
       const duration = Date.now() - ctx.startTime;
       
-      dataChannel.send(JSON.stringify({
-        type: 'transfer-end',
-        payload: {
-          transferId,
-          fileHash: ctx.manifest.fileHash,
-          totalChunksSent: ctx.sentChunks.size,
-          totalBytesSent: ctx.file.size,
-          duration,
-          timestamp: Date.now()
-        }
-      }));
+      try {
+        dataChannel.send(JSON.stringify({
+          type: 'transfer-end',
+          payload: {
+            transferId,
+            fileHash: ctx.manifest.fileHash,
+            totalChunksSent: ctx.sentChunks.size,
+            totalBytesSent: ctx.file.size,
+            duration,
+            timestamp: Date.now()
+          }
+        }));
+      } catch (error) {
+        console.error(`❌ Error sending transfer-end:`, error);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+      }
     }
   }, []);
 
