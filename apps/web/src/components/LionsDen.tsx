@@ -231,7 +231,10 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   const handleMobileBack = () => {
     if (mobileSlideIndex > 0) {
       // Clear selections when going back
-      if (mobileSlideIndex === 2) {
+      if (mobileSlideIndex === 3) {
+        // Going back from transfer progress - go to den
+        setMobileSlideIndex(0);
+      } else if (mobileSlideIndex === 2) {
         // Going back from send button - clear files only (keep peer)
         onFilesSelected([]);
       } else if (mobileSlideIndex === 1) {
@@ -350,10 +353,12 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                     <div className="absolute w-full h-full flex items-center justify-center">
                       <div className="relative w-full h-full" style={{ minWidth: '192px', minHeight: '192px' }}>
                         {otherPeers.map((peer, idx) => {
-                          const angle = (idx / otherPeers.length) * 2 * Math.PI;
-                          const radius = 100;
-                          const x = Math.cos(angle) * radius;
-                          const y = Math.sin(angle) * radius;
+                          const angle = (idx / otherPeers.length) * 2 * Math.PI - Math.PI / 2;
+                          const radius = 80;
+                          const centerX = 96; // Half of 192px (mobile size)
+                          const centerY = 96;
+                          const x = Math.cos(angle) * radius + centerX - 32; // 32 is half avatar size
+                          const y = Math.sin(angle) * radius + centerY - 32;
                           const isSelected = selectedPeer?.id === peer.id;
 
                           return (
@@ -446,10 +451,11 @@ export const LionsDen: React.FC<LionsDenProps> = ({
       case 1: // File selection
         return (
           <div className="w-full h-full">
-            <GlassCard className="p-6 min-h-[550px]">
+            <GlassCard className="p-4 md:p-6 min-h-[500px] md:min-h-[550px]">
+              <h2 className="text-xl font-bold mb-4" style={{ color: '#2C1B12' }}>Select Files</h2>
               <div className="mb-4">
-                {selectedPeer && (
-                  <div className="flex items-center gap-3 mb-4">
+                {selectedPeer ? (
+                  <div className="flex items-center gap-3 mb-4 p-3 bg-white/20 rounded-lg">
                     <Avatar
                       emoji={selectedPeer.emoji}
                       color={selectedPeer.color}
@@ -461,6 +467,12 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                         {selectedPeer.isOnline ? 'Online' : 'Offline'}
                       </p>
                     </div>
+                  </div>
+                ) : (
+                  <div className="mb-4 p-3 bg-orange-100/50 rounded-lg text-center">
+                    <p className="text-sm" style={{ color: '#A6521B' }}>
+                      Please select a peer from the den first
+                    </p>
                   </div>
                 )}
               </div>
@@ -475,7 +487,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
               />
               <motion.div
                 className={`
-                  relative w-full h-64 mx-auto rounded-full border-2 border-dashed
+                  relative w-full max-w-md h-48 md:h-64 mx-auto rounded-full border-2 border-dashed
                   flex items-center justify-center cursor-pointer transition-colors
                 `}
                 style={{
@@ -485,9 +497,9 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onClick={handleClick}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                onClick={selectedPeer ? handleClick : undefined}
+                whileHover={selectedPeer ? { scale: 1.02 } : {}}
+                whileTap={selectedPeer ? { scale: 0.98 } : {}}
               >
                 <div className="text-center">
                   <motion.div
@@ -497,12 +509,17 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                     <svg className="w-12 h-12 mx-auto mb-4" style={{ color: '#A6521B', opacity: 0.6 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    <p className="font-medium mb-2" style={{ color: '#2C1B12', opacity: 0.8 }}>
-                      {isDragOver ? 'Drop files here' : 'Drop files or click to select'}
+                    <p className="font-medium mb-2" style={{ color: '#2C1B12', opacity: selectedPeer ? 0.8 : 0.5 }}>
+                      {selectedPeer 
+                        ? (isDragOver ? 'Drop files here' : 'Drop files or click to select')
+                        : 'Select a peer first'
+                      }
                     </p>
-                    <p className="text-sm" style={{ color: '#2C1B12', opacity: 0.6 }}>
-                      Any file type, any size
-                    </p>
+                    {selectedPeer && (
+                      <p className="text-sm" style={{ color: '#2C1B12', opacity: 0.6 }}>
+                        Any file type, any size
+                      </p>
+                    )}
                   </motion.div>
                 </div>
                 {isDragOver && (
@@ -559,8 +576,9 @@ export const LionsDen: React.FC<LionsDenProps> = ({
       case 2: // Send button
         return (
           <div className="w-full h-full">
-            <GlassCard className="p-6 min-h-[550px]">
-              {selectedPeer && (
+            <GlassCard className="p-4 md:p-6 min-h-[500px] md:min-h-[550px]">
+              <h2 className="text-xl font-bold mb-4" style={{ color: '#2C1B12' }}>Send Files</h2>
+              {selectedPeer && selectedFiles.length > 0 ? (
                 <div className="text-center mb-6">
                   <Avatar
                     emoji={selectedPeer.emoji}
@@ -611,15 +629,113 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                     </div>
                   )}
                 </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="w-20 h-20 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)' }}>
+                    <span className="text-3xl">📤</span>
+                  </div>
+                  <p className="text-lg font-medium mb-2" style={{ color: '#2C1B12' }}>
+                    {!selectedPeer ? 'No peer selected' : 'No files selected'}
+                  </p>
+                  <p className="text-sm" style={{ color: '#A6521B' }}>
+                    {!selectedPeer 
+                      ? 'Go back and select a peer from the den' 
+                      : 'Go back and select files to send'}
+                  </p>
+                </div>
               )}
             </GlassCard>
           </div>
         );
       
       case 3: // Transfer progress
+        const completedTransfers = transfers.filter(t => t.status === 'completed');
+        const hasCompletedTransfers = completedTransfers.length > 0;
+        const hasActiveTransfers = transfers.some(t => t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting');
+        
         return (
           <div className="w-full h-full" ref={transferProgressRef}>
-            {transferProgressBox}
+            <GlassCard className="p-4 md:p-6 min-h-[500px] md:min-h-[550px]">
+              <h2 className="text-xl font-bold mb-4" style={{ color: '#2C1B12' }}>Transfer Progress</h2>
+              {transfers.length === 0 ? (
+                <div className="text-center py-12">
+                  <File className="w-12 h-12 mx-auto mb-4 text-orange-400/60" />
+                  <p className="text-orange-700/80 mb-4">No active transfers</p>
+                  <motion.button
+                    onClick={() => setMobileSlideIndex(0)}
+                    className="px-6 py-3 rounded-lg font-medium text-white"
+                    style={{ backgroundColor: '#F6C148' }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Start New Transfer
+                  </motion.button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {transfers.map((transfer) => (
+                    <div
+                      key={transfer.id}
+                      className="p-4 rounded-lg bg-white/40 border border-orange-100/60 backdrop-blur-sm"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold truncate" style={{ color: '#2C1B12' }}>
+                            {transfer.file.name}
+                          </h3>
+                          <p className="text-sm text-orange-700/80">
+                            To: {transfer.peer.name}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(transfer.status)}
+                          {transfer.status === 'transferring' && (
+                            <button
+                              onClick={() => onCancelTransfer(transfer.id)}
+                              className="p-1 rounded-full hover:bg-orange-100 text-orange-600 transition-colors"
+                            >
+                              <X size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <CubProgress 
+                        progress={transfer.progress || 0}
+                        className="mb-2"
+                        speed={transfer.speed}
+                        timeRemaining={transfer.timeRemaining}
+                        fileSize={transfer.file.size}
+                        bytesTransferred={transfer.bytesTransferred}
+                        status={transfer.status}
+                      />
+                    </div>
+                  ))}
+                  
+                  {/* Send More button after transfer completes */}
+                  {hasCompletedTransfers && !hasActiveTransfers && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-6 pt-6 border-t border-orange-200"
+                    >
+                      <motion.button
+                        onClick={() => {
+                          onClearSelection();
+                          setMobileSlideIndex(0);
+                        }}
+                        className="w-full p-4 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                        style={{ backgroundColor: '#F6C148' }}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        <Send size={20} />
+                        Send More Files
+                      </motion.button>
+                    </motion.div>
+                  )}
+                </div>
+              )}
+            </GlassCard>
           </div>
         );
       
@@ -683,8 +799,8 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     </GlassCard>
   );
 
-  // Mobile sliding interface wrapper
-  if (isMobile && mode === 'den') {
+  // Mobile sliding interface wrapper - show carousel for all modes on mobile
+  if (isMobile) {
     return (
       <div className="relative w-full overflow-hidden" style={{ minHeight: '600px', maxWidth: '100vw' }}>
         {/* Sliding container */}
@@ -938,6 +1054,9 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     );
   }
   if (mode === 'prey') {
+    // Hide on mobile - use sliding interface instead
+    if (isMobile) return null;
+    
     // Only render Select Prey (Files) and file input logic
     return (
       <GlassCard className="p-6 min-h-[550px]">
@@ -1043,6 +1162,9 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     );
   }
   if (mode === 'target') {
+    // Hide on mobile - use sliding interface instead
+    if (isMobile) return null;
+    
     // Only render Target Cub
     return (
       <GlassCard className="p-6 min-h-[550px]">
