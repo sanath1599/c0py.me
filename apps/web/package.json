@@ -12,6 +12,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@sharedrop/config": "file:../../packages/config",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "framer-motion": "^12.23.0",

@@ -32,8 +32,12 @@ export const WEBRTC_CONSTANTS = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ],
-  CHUNK_SIZE: 16384, // 16KB
   DATA_CHANNEL_NAME: 'fileTransfer',
+  // Flow control constants
+  MAX_BUFFERED_AMOUNT: 2 * 1024 * 1024, // 2MB
+  BUFFERED_AMOUNT_LOW_THRESHOLD: 256 * 1024, // 256KB
+  PROGRESS_UPDATE_INTERVAL: 100, // ms
+  PROGRESS_CHANGE_THRESHOLD: 0.1, // %
 } as const;
 
 export const FILE_CONSTANTS = {
@@ -57,4 +61,10 @@ export const VALIDATION_CONSTANTS = {
   FILENAME: {
     MAX_LENGTH: 255,
   },
+} as const;
+
+export const INDEXEDDB_CONSTANTS = {
+  INDEXEDDB_NAME: 'sharedrop-files',
+  INDEXEDDB_VERSION: 1,
+  INDEXEDDB_MOBILE_THRESHOLD: 50 * 1024 * 1024, // 50MB - use IndexedDB for files larger than this on mobile
 } as const; 

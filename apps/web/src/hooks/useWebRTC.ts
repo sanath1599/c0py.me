@@ -3,13 +3,35 @@ import { FileTransfer, Peer } from '../types';
 import { formatFileSize } from '../utils/format';
 import { playChime, playSuccessSound } from '../utils/sound';
 import { logSystemEvent, logUserAction } from '../utils/eventLogger';
+import { isMobileDevice } from '../utils/device';
+import { WEBRTC_CONSTANTS } from '@sharedrop/config';
 
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' }
 ];
 
-const CHUNK_SIZE = 16384; // 16KB chunks
+/**
+ * Get optimal chunk size based on device type and file size
+ */
+const getOptimalChunkSize = (fileSize: number): number => {
+  const mobile = isMobileDevice();
+  
+  // Mobile: smaller chunks for better memory management
+  if (mobile) {
+    return 8192; // 8KB
+  }
+  
+  // Desktop: larger chunks for better performance
+  // For very large files (>500MB), use even larger chunks
+  if (fileSize > 500 * 1024 * 1024) {
+    return 256 * 1024; // 256KB for very large files
+  } else if (fileSize > 100 * 1024 * 1024) {
+    return 128 * 1024; // 128KB for large files
+  } else {
+    return 64 * 1024; // 64KB for medium files
+  }
+};
 
 export const useWebRTC = (
   onSignal: (to: string, from: string, data: any) => void, 
@@ -36,7 +58,18 @@ export const useWebRTC = (
     transferId: string;
   }>>([]);
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
-  const receivedFilesRef = useRef<Map<string, { name: string; size: number; type: string; chunks: ArrayBuffer[]; startTime: number }>>(new Map());
+  const receivedFilesRef = useRef<Map<string, { 
+    name: string; 
+    size: number; 
+    type: string; 
+    receivedSize: number;
+    blobParts: BlobPart[];
+    startTime: number;
+    lastProgressUpdate: number;
+    useIndexedDB: boolean;
+    transferId: string;
+    chunkIndex: number;
+  }>>(new Map());
   const pendingFilesRef = useRef<Map<string, { file: File; peer: any; transferId: string }>>(new Map());
   const [completedReceived, setCompletedReceived] = useState<Array<{
     id: string;
@@ -154,6 +187,10 @@ export const useWebRTC = (
   const sendFile = useCallback(async (file: File, peer: Peer) => {
     console.log(`📤 Sending file ${file.name} to ${peer.name}`);
     
+    // Extract IndexedDB metadata if present
+    const fileId = (file as any).fileId;
+    const useIndexedDB = (file as any).useIndexedDB === true;
+    
     // Check if there's already a transfer in progress
     const activeTransfers = transfers.filter(t => 
       t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting'
@@ -245,7 +282,8 @@ export const useWebRTC = (
       });
       
       const dataChannel = pc.createDataChannel('file-transfer', {
-        ordered: true
+        ordered: true,
+        maxRetransmits: 3
       });
       dataChannel.onopen = () => {
         console.log('📤 Data channel opened for sending');
@@ -288,8 +326,10 @@ export const useWebRTC = (
               setTransfers(prev => prev.map(t => 
                 t.id === transferId ? { ...t, status: 'transferring' } : t
               ));
-              // Start file transfer
-              sendFileInChunks(dataChannel, file, transferId);
+              // Start file transfer with IndexedDB support
+              const fileId = (file as any).fileId;
+              const useIndexedDB = (file as any).useIndexedDB === true;
+              sendFileInChunks(dataChannel, file, transferId, fileId, useIndexedDB);
             } else if (message.type === 'file-rejected' && message.transferId === transferId) {
               console.log('📤 File rejected');
               
@@ -376,14 +416,151 @@ export const useWebRTC = (
     }
   }, [connections, createPeerConnection, onSignal, userId, storePendingRequest, isConnected, transfers, addToast]);
 
-  const sendFileInChunks = (dataChannel: RTCDataChannel, file: File, transferId: string) => {
+  const sendFileInChunks = async (
+    dataChannel: RTCDataChannel, 
+    file: File, 
+    transferId: string,
+    fileId?: string,
+    useIndexedDB?: boolean
+  ) => {
+    const { getOutgoingFile, deleteOutgoingFile } = await import('../utils/indexedDB');
+    const { WEBRTC_CONSTANTS } = await import('@sharedrop/config');
+    
+    let fileToSend = file;
+    
+    // Load from IndexedDB if needed
+    if (useIndexedDB && fileId) {
+      try {
+        fileToSend = await getOutgoingFile(fileId);
+        console.log('📦 Loaded file from IndexedDB for transfer');
+      } catch (error) {
+        console.error('❌ Failed to load file from IndexedDB:', error);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        return;
+      }
+    }
+    
+    const CHUNK_SIZE = getOptimalChunkSize(fileToSend.size);
+    const MAX_BUFFERED_AMOUNT = WEBRTC_CONSTANTS.MAX_BUFFERED_AMOUNT;
+    const BUFFERED_AMOUNT_LOW_THRESHOLD = WEBRTC_CONSTANTS.BUFFERED_AMOUNT_LOW_THRESHOLD;
+    const PROGRESS_UPDATE_INTERVAL = WEBRTC_CONSTANTS.PROGRESS_UPDATE_INTERVAL;
+    const PROGRESS_CHANGE_THRESHOLD = WEBRTC_CONSTANTS.PROGRESS_CHANGE_THRESHOLD;
+    
     const reader = new FileReader();
     let offset = 0;
     const startTime = Date.now();
+    let isPaused = false;
+    
+    // Progress update throttling
+    let lastProgressUpdate = 0;
+    let lastReportedProgress = 0;
+    
+    // Set up flow control
+    dataChannel.bufferedAmountLowThreshold = BUFFERED_AMOUNT_LOW_THRESHOLD;
+    dataChannel.onbufferedamountlow = () => {
+      if (isPaused && offset < fileToSend.size) {
+        isPaused = false;
+        console.log('▶️ Buffer low, resuming transfer');
+        readSlice();
+      }
+    };
+
+    const updateProgress = (currentOffset: number, force: boolean = false) => {
+      const now = Date.now();
+      const progress = (currentOffset / fileToSend.size) * 100;
+      
+      // Throttle: max once per interval
+      if (!force && (now - lastProgressUpdate) < PROGRESS_UPDATE_INTERVAL) {
+        return;
+      }
+      
+      // Threshold: only update if changed significantly
+      if (!force && Math.abs(progress - lastReportedProgress) < PROGRESS_CHANGE_THRESHOLD) {
+        return;
+      }
+      
+      lastProgressUpdate = now;
+      lastReportedProgress = progress;
+      
+      const elapsed = (now - startTime) / 1000; // seconds
+      const speed = elapsed > 0 ? currentOffset / elapsed : 0;
+      const timeRemaining = speed > 0 ? (fileToSend.size - currentOffset) / speed : 0;
+
+      // Update state (batched via requestAnimationFrame)
+      requestAnimationFrame(() => {
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { 
+            ...t, 
+            progress: Math.round(progress * 10) / 10,
+            speed: Math.round(speed),
+            timeRemaining: Math.round(timeRemaining)
+          } : t
+        ));
+      });
+    };
 
     const readSlice = () => {
-      const slice = file.slice(offset, offset + CHUNK_SIZE);
+      if (isPaused) return;
+      
+      const slice = fileToSend.slice(offset, offset + CHUNK_SIZE);
       reader.readAsArrayBuffer(slice);
+    };
+
+    const sendChunk = (chunk: ArrayBuffer) => {
+      // Flow control: check buffer before sending
+      if (dataChannel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
+        if (!isPaused) {
+          isPaused = true;
+          console.log('⏸️ Buffer full, pausing transfer. Buffered:', dataChannel.bufferedAmount);
+        }
+        return;
+      }
+
+      if (isPaused) {
+        isPaused = false;
+      }
+
+      try {
+        dataChannel.send(chunk);
+        offset += chunk.byteLength;
+        
+        // Throttled progress update
+        updateProgress(offset);
+
+        if (offset < fileToSend.size) {
+          // Use requestAnimationFrame for better scheduling
+          requestAnimationFrame(() => {
+            readSlice();
+          });
+        } else {
+          // Final update
+          updateProgress(offset, true);
+          
+          dataChannel.send(JSON.stringify({ type: 'file-end' }));
+          setTransfers(prev => prev.map(t => 
+            t.id === transferId ? { ...t, status: 'completed', progress: 100 } : t
+          ));
+          
+          logSystemEvent.transferCompleted(transferId, Date.now() - startTime, fileToSend.size, 0);
+          
+          // Clean up IndexedDB entry after successful transfer
+          if (useIndexedDB && fileId) {
+            deleteOutgoingFile(fileId).catch(error => {
+              console.error('Failed to delete file from IndexedDB:', error);
+            });
+          }
+          
+          console.log('✅ File transfer completed - keeping data channel open for future transfers');
+        }
+      } catch (error) {
+        console.error('❌ Error sending chunk:', error);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        logSystemEvent.transferFailed(transferId, 'transfer_failed', Date.now() - startTime);
+      }
     };
 
     reader.onload = (event) => {
@@ -394,48 +571,15 @@ export const useWebRTC = (
         if (offset === 0) {
           dataChannel.send(JSON.stringify({
             type: 'file-start',
-            name: file.name,
-            size: file.size,
-            fileType: file.type
+            name: fileToSend.name,
+            size: fileToSend.size,
+            fileType: fileToSend.type,
+            chunkSize: CHUNK_SIZE,
+            useIndexedDB: useIndexedDB || false
           }));
         }
 
-        // Send chunk
-        dataChannel.send(chunk);
-        offset += chunk.byteLength;
-
-        // Update progress
-        const progress = (offset / file.size) * 100;
-        const elapsed = Date.now() - startTime;
-        const speed = offset / (elapsed / 1000); // bytes per second
-        const timeRemaining = speed > 0 ? (file.size - offset) / speed : 0;
-
-        setTransfers(prev => prev.map(t => 
-          t.id === transferId ? { 
-            ...t, 
-            progress: Math.round(progress),
-            speed: Math.round(speed),
-            timeRemaining: Math.round(timeRemaining)
-          } : t
-        ));
-
-        if (offset < file.size) {
-          readSlice();
-        } else {
-          // File transfer complete
-          dataChannel.send(JSON.stringify({ type: 'file-end' }));
-          setTransfers(prev => prev.map(t => 
-            t.id === transferId ? { ...t, status: 'completed', progress: 100 } : t
-          ));
-          
-          // Track successful file transfer
-          logSystemEvent.transferCompleted(transferId, Date.now() - startTime, file.size, 0);
-          
-          // Don't close data channel immediately - keep it open for potential future transfers
-          // Only close if explicitly needed (e.g., user cancels or connection fails)
-          // This allows multiple file transfers without re-establishing WebRTC connection
-          console.log('✅ File transfer completed - keeping data channel open for future transfers');
-        }
+        sendChunk(chunk);
       }
     };
 
@@ -444,7 +588,7 @@ export const useWebRTC = (
       setTransfers(prev => prev.map(t => 
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
-              logSystemEvent.transferFailed(transferId, 'transfer_failed', Date.now() - startTime);
+      logSystemEvent.transferFailed(transferId, 'transfer_failed', Date.now() - startTime);
     };
 
     readSlice();
@@ -520,13 +664,45 @@ export const useWebRTC = (
                   
                 } else if (message.type === 'file-start') {
                   console.log('📥 Receiving file:', message.name);
-                  receivedFilesRef.current.set(from, {
-                    name: message.name,
-                    size: message.size,
-                    type: message.fileType,
-                    chunks: [],
-                    startTime: Date.now()
-                  });
+                  
+                  // Determine if we should use IndexedDB (async operation)
+                  (async () => {
+                    const { INDEXEDDB_CONSTANTS } = await import('@sharedrop/config');
+                    const shouldUseIDB = message.useIndexedDB && isMobileDevice() && message.size > INDEXEDDB_CONSTANTS.INDEXEDDB_MOBILE_THRESHOLD;
+                    const transferId = `${from}-${Date.now()}`;
+                    
+                    if (shouldUseIDB) {
+                      const { storeIncomingMetadata } = await import('../utils/indexedDB');
+                      const chunkSize = message.chunkSize || 8192;
+                      const chunkCount = Math.ceil(message.size / chunkSize);
+                      
+                      try {
+                        await storeIncomingMetadata(transferId, {
+                          name: message.name,
+                          size: message.size,
+                          type: message.fileType,
+                          chunkCount
+                        });
+                        console.log('📦 Storing incoming file metadata to IndexedDB');
+                      } catch (error) {
+                        console.error('Failed to store metadata to IndexedDB:', error);
+                        // Fallback to memory
+                      }
+                    }
+                    
+                    receivedFilesRef.current.set(from, {
+                      name: message.name,
+                      size: message.size,
+                      type: message.fileType,
+                      receivedSize: 0,
+                      blobParts: [],
+                      startTime: Date.now(),
+                      lastProgressUpdate: 0,
+                      useIndexedDB: shouldUseIDB || false,
+                      transferId: shouldUseIDB ? transferId : from,
+                      chunkIndex: 0
+                    });
+                  })();
                   // Only add transfer if not already present for this peer and file
                   setTransfers(prev => {
                     const alreadyExists = prev.some(t =>
@@ -569,47 +745,66 @@ export const useWebRTC = (
                   const receivedFile = receivedFilesRef.current.get(from);
                   if (receivedFile) {
                     console.log('📥 File received, reconstructing...');
-                    // Reconstruct file
-                    const blob = new Blob(receivedFile.chunks, { type: receivedFile.type });
-                    const url = URL.createObjectURL(blob);
-                    // Store for transfer complete modal
-                    setCompletedReceived(prev => [
-                      ...prev,
-                      {
-                        id: `completed-${Date.now()}-${Math.random()}`,
-                        file: new File([blob], receivedFile.name, { type: receivedFile.type }),
-                        url,
-                        peer: { 
-                          id: from, 
-                          name: getPeerName(from), 
-                          emoji: '📱', 
-                          color: '#F6C148' 
+                    
+                    // Reconstruct file from IndexedDB or memory
+                    (async () => {
+                      let blob: Blob;
+                      
+                      if (receivedFile.useIndexedDB) {
+                        const { reconstructFileFromIDB, cleanupTransfer } = await import('../utils/indexedDB');
+                        try {
+                          blob = await reconstructFileFromIDB(receivedFile.transferId);
+                          await cleanupTransfer(receivedFile.transferId);
+                          console.log('📦 Reconstructed file from IndexedDB');
+                        } catch (error) {
+                          console.error('Failed to reconstruct from IndexedDB:', error);
+                          // Fallback to memory if available
+                          blob = new Blob(receivedFile.blobParts, { type: receivedFile.type });
                         }
+                      } else {
+                        blob = new Blob(receivedFile.blobParts, { type: receivedFile.type });
                       }
-                    ]);
-                    receivedFilesRef.current.delete(from);
-                    // Update transfer status
-                    setTransfers(prev => prev.map(t => 
-                      t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
-                    ));
-                    
-                    // Track file received
-                    logSystemEvent.fileReceived(receivedFile.type, receivedFile.size);
-                    
-                    // Play success sound
-                    playSuccessSound();
-                    
-                    // Show success notification
-                    if (addToast) {
-                      addToast('success', `File received: ${receivedFile.name} from ${getPeerName(from)}`);
-                    }
-                    
-                    if ('Notification' in window && Notification.permission === 'granted') {
-                      new Notification('File Received', {
-                        body: `Successfully received ${receivedFile.name} from ${getPeerName(from)}`,
-                        icon: '/favicon.ico'
-                      });
-                    }
+                      
+                      const url = URL.createObjectURL(blob);
+                      // Store for transfer complete modal
+                      setCompletedReceived(prev => [
+                        ...prev,
+                        {
+                          id: `completed-${Date.now()}-${Math.random()}`,
+                          file: new File([blob], receivedFile.name, { type: receivedFile.type }),
+                          url,
+                          peer: { 
+                            id: from, 
+                            name: getPeerName(from), 
+                            emoji: '📱', 
+                            color: '#F6C148' 
+                          }
+                        }
+                      ]);
+                      receivedFilesRef.current.delete(from);
+                      // Update transfer status
+                      setTransfers(prev => prev.map(t => 
+                        t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
+                      ));
+                      
+                      // Track file received
+                      logSystemEvent.fileReceived(receivedFile.type, receivedFile.size);
+                      
+                      // Play success sound
+                      playSuccessSound();
+                      
+                      // Show success notification
+                      if (addToast) {
+                        addToast('success', `File received: ${receivedFile.name} from ${getPeerName(from)}`);
+                      }
+                      
+                      if ('Notification' in window && Notification.permission === 'granted') {
+                        new Notification('File Received', {
+                          body: `Successfully received ${receivedFile.name} from ${getPeerName(from)}`,
+                          icon: '/favicon.ico'
+                        });
+                      }
+                    })();
                   }
                 }
               } catch (error) {
@@ -619,23 +814,54 @@ export const useWebRTC = (
               // Binary data (file chunk)
               const receivedFile = receivedFilesRef.current.get(from);
               if (receivedFile) {
-                receivedFile.chunks.push(event.data);
-                
-                // Calculate progress, speed, and ETA
-                const totalReceived = receivedFile.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
-                const progress = (totalReceived / receivedFile.size) * 100;
-                const elapsed = Date.now() - receivedFile.startTime;
-                const speed = elapsed > 0 ? totalReceived / (elapsed / 1000) : 0; // bytes per second
-                const timeRemaining = speed > 0 ? (receivedFile.size - totalReceived) / speed : 0;
-                
-                setTransfers(prev => prev.map(t => 
-                  t.peer.id === from && t.status === 'transferring' ? { 
-                    ...t, 
-                    progress: Math.round(progress),
-                    speed: Math.round(speed),
-                    timeRemaining: Math.round(timeRemaining)
-                  } : t
-                ));
+                // Store chunk to IndexedDB or memory
+                (async () => {
+                  if (receivedFile.useIndexedDB) {
+                    const { storeIncomingChunk } = await import('../utils/indexedDB');
+                    try {
+                      await storeIncomingChunk(receivedFile.transferId, receivedFile.chunkIndex, event.data);
+                      receivedFile.chunkIndex++;
+                    } catch (error) {
+                      console.error('Failed to store chunk to IndexedDB:', error);
+                      // Fallback to memory
+                      receivedFile.blobParts.push(event.data);
+                    }
+                  } else {
+                    receivedFile.blobParts.push(event.data);
+                  }
+                  
+                  receivedFile.receivedSize += event.data.byteLength;
+                  
+                  // Throttled progress update
+                  const now = Date.now();
+                  const { WEBRTC_CONSTANTS } = await import('@sharedrop/config');
+                  const PROGRESS_UPDATE_INTERVAL = WEBRTC_CONSTANTS.PROGRESS_UPDATE_INTERVAL;
+                  const PROGRESS_CHANGE_THRESHOLD = WEBRTC_CONSTANTS.PROGRESS_CHANGE_THRESHOLD;
+                  
+                  if ((now - receivedFile.lastProgressUpdate) >= PROGRESS_UPDATE_INTERVAL) {
+                    const progress = (receivedFile.receivedSize / receivedFile.size) * 100;
+                    const lastProgress = receivedFile.lastProgressUpdate === 0 ? 0 : 
+                      ((receivedFile.receivedSize - event.data.byteLength) / receivedFile.size) * 100;
+                    
+                    if (Math.abs(progress - lastProgress) >= PROGRESS_CHANGE_THRESHOLD) {
+                      receivedFile.lastProgressUpdate = now;
+                      const elapsed = (now - receivedFile.startTime) / 1000;
+                      const speed = elapsed > 0 ? receivedFile.receivedSize / elapsed : 0;
+                      const timeRemaining = speed > 0 ? (receivedFile.size - receivedFile.receivedSize) / speed : 0;
+                      
+                      requestAnimationFrame(() => {
+                        setTransfers(prev => prev.map(t => 
+                          t.peer.id === from && t.status === 'transferring' ? { 
+                            ...t, 
+                            progress: Math.round(progress * 10) / 10,
+                            speed: Math.round(speed),
+                            timeRemaining: Math.round(timeRemaining)
+                          } : t
+                        ));
+                      });
+                    }
+                  }
+                })();
               }
             }
           };
