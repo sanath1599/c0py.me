@@ -669,7 +669,7 @@ export const useWebRTC = (
                   (async () => {
                     const { INDEXEDDB_CONSTANTS } = await import('@sharedrop/config');
                     const shouldUseIDB = message.useIndexedDB && isMobileDevice() && message.size > INDEXEDDB_CONSTANTS.INDEXEDDB_MOBILE_THRESHOLD;
-                    const transferId = `${from}-${Date.now()}`;
+                    const transferId = `receive-${from}-${Date.now()}-${Math.random()}`;
                     
                     if (shouldUseIDB) {
                       const { storeIncomingMetadata } = await import('../utils/indexedDB');
@@ -699,48 +699,49 @@ export const useWebRTC = (
                       startTime: Date.now(),
                       lastProgressUpdate: 0,
                       useIndexedDB: shouldUseIDB || false,
-                      transferId: shouldUseIDB ? transferId : from,
+                      transferId: transferId,
                       chunkIndex: 0
                     });
-                  })();
-                  // Only add transfer if not already present for this peer and file
-                  setTransfers(prev => {
-                    const alreadyExists = prev.some(t =>
-                      t.peer.id === from &&
-                      t.file.name === message.name &&
-                      t.file.type === message.fileType &&
-                      t.status !== 'completed'
-                    );
-                    if (alreadyExists) {
-                      // Update status to 'transferring' if needed
-                      return prev.map(t =>
-                        t.peer.id === from && t.file.name === message.name && t.file.type === message.fileType && t.status !== 'completed'
-                          ? { ...t, status: 'transferring' }
-                          : t
+                    
+                    // Add or update transfer with the same transferId
+                    setTransfers(prev => {
+                      const alreadyExists = prev.some(t =>
+                        t.peer.id === from &&
+                        t.file.name === message.name &&
+                        t.file.type === message.fileType &&
+                        t.status !== 'completed' &&
+                        t.status !== 'failed'
                       );
-                    } else {
-                      // Add new transfer if not present
-                  const transferId = `receive-${Date.now()}-${Math.random()}`;
-                      return [
-                        ...prev,
-                        {
-                    id: transferId,
-                    file: new File([new ArrayBuffer(message.size)], message.name, { type: message.fileType }),
-                          peer: { 
-                            id: from, 
-                            name: getPeerName(from), 
-                            emoji: '📱', 
-                            color: '#F6C148', 
-                            isOnline: true 
-                          },
-                    status: 'transferring',
-                          progress: 0,
-                          speed: 0,
-                          timeRemaining: 0
-                        }
-                      ];
-                    }
-                  });
+                      if (alreadyExists) {
+                        // Update existing transfer
+                        return prev.map(t =>
+                          t.peer.id === from && t.file.name === message.name && t.file.type === message.fileType && t.status !== 'completed' && t.status !== 'failed'
+                            ? { ...t, status: 'transferring', progress: 0 }
+                            : t
+                        );
+                      } else {
+                        // Add new transfer
+                        return [
+                          ...prev,
+                          {
+                            id: transferId,
+                            file: new File([new ArrayBuffer(message.size)], message.name, { type: message.fileType }),
+                            peer: { 
+                              id: from, 
+                              name: getPeerName(from), 
+                              emoji: '📱', 
+                              color: '#F6C148', 
+                              isOnline: true 
+                            },
+                            status: 'transferring',
+                            progress: 0,
+                            speed: 0,
+                            timeRemaining: 0
+                          }
+                        ];
+                      }
+                    });
+                  })();
                 } else if (message.type === 'file-end') {
                   const receivedFile = receivedFilesRef.current.get(from);
                   if (receivedFile) {
@@ -781,10 +782,11 @@ export const useWebRTC = (
                           }
                         }
                       ]);
+                      const transferIdToComplete = receivedFile.transferId;
                       receivedFilesRef.current.delete(from);
-                      // Update transfer status
+                      // Update transfer status by transferId
                       setTransfers(prev => prev.map(t => 
-                        t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
+                        t.id === transferIdToComplete && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
                       ));
                       
                       // Track file received
@@ -843,17 +845,18 @@ export const useWebRTC = (
                     const lastProgress = receivedFile.lastProgressUpdate === 0 ? 0 : 
                       ((receivedFile.receivedSize - event.data.byteLength) / receivedFile.size) * 100;
                     
-                    if (Math.abs(progress - lastProgress) >= PROGRESS_CHANGE_THRESHOLD) {
+                    if (Math.abs(progress - lastProgress) >= PROGRESS_CHANGE_THRESHOLD || receivedFile.lastProgressUpdate === 0) {
                       receivedFile.lastProgressUpdate = now;
                       const elapsed = (now - receivedFile.startTime) / 1000;
                       const speed = elapsed > 0 ? receivedFile.receivedSize / elapsed : 0;
                       const timeRemaining = speed > 0 ? (receivedFile.size - receivedFile.receivedSize) / speed : 0;
                       
+                      // Update transfer by transferId for more accurate matching
                       requestAnimationFrame(() => {
                         setTransfers(prev => prev.map(t => 
-                          t.peer.id === from && t.status === 'transferring' ? { 
+                          t.id === receivedFile.transferId && t.status === 'transferring' ? { 
                             ...t, 
-                            progress: Math.round(progress * 10) / 10,
+                            progress: Math.min(Math.round(progress * 10) / 10, 99.9), // Cap at 99.9% until complete
                             speed: Math.round(speed),
                             timeRemaining: Math.round(timeRemaining)
                           } : t
