@@ -33,7 +33,7 @@ const DEFAULT_OPTIONS: Required<NetworkDetectionOptions> = {
   maxRetries: 5,
   retryDelay: 3000,
   healthCheckInterval: 10000, // Much less frequent checks to reduce false positives
-  serverHealthUrl: 'backend.c0py.me/api/health',
+  serverHealthUrl: 'https://backend.c0py.me/api/health',
   enableFallback: true,
 };
 

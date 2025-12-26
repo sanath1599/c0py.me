@@ -286,7 +286,8 @@ export const useWebRTC = (
   }, []);
 
   /**
-   * Send chunks with flow control
+   * Send chunks with flow control, pacing, and retry logic
+   * Optimized for large file transfers (1GB+)
    */
   const sendChunksRobust = useCallback(async (
     dataChannel: RTCDataChannel,
@@ -294,6 +295,16 @@ export const useWebRTC = (
   ) => {
     const ctx = robustSendContextRef.current.get(transferId);
     if (!ctx) return;
+
+    // Buffer thresholds (lowered for reliability with large files)
+    const BUFFER_HIGH_WATERMARK = 256 * 1024;  // 256KB - pause sending when buffer exceeds this
+    const BUFFER_LOW_WATERMARK = 16 * 1024;    // 16KB - resume sending when buffer drops below this
+    const MAX_CHUNK_RETRIES = 3;               // Retry failed chunks up to 3 times
+
+    // Track retry counts per chunk
+    const chunkRetryCount = new Map<number, number>();
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 5;
 
     // Check if data channel is already closed
     if (dataChannel.readyState !== 'open') {
@@ -306,9 +317,22 @@ export const useWebRTC = (
     }
 
     ctx.isPaused = false;
-    console.log(`🚀 Starting chunk transfer...`);
+    console.log(`🚀 Starting chunk transfer (buffer limits: ${BUFFER_HIGH_WATERMARK / 1024}KB high, ${BUFFER_LOW_WATERMARK / 1024}KB low)...`);
 
-    const sendSingleChunk = async (sequence: number): Promise<'sent' | 'channel_closed' | 'error'> => {
+    // Helper function for adaptive delay based on buffer state
+    const getAdaptiveDelay = (): number => {
+      const buffered = dataChannel.bufferedAmount;
+      if (buffered > 128 * 1024) return 10;  // 10ms delay if buffer > 128KB
+      if (buffered > 64 * 1024) return 5;    // 5ms delay if buffer > 64KB
+      return 0;                               // No delay if buffer is low
+    };
+
+    // Helper function to delay execution
+    const delay = (ms: number): Promise<void> => {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    };
+
+    const sendSingleChunk = async (sequence: number): Promise<'sent' | 'channel_closed' | 'error' | 'retry_exhausted'> => {
       // Always check channel state before sending
       if (dataChannel.readyState !== 'open') {
         console.log(`⚠️ Data channel closed during transfer (state: ${dataChannel.readyState})`);
@@ -326,6 +350,7 @@ export const useWebRTC = (
         
         dataChannel.send(binaryChunk);
         ctx.sentChunks.add(sequence);
+        consecutiveErrors = 0; // Reset consecutive error count on success
         
         // Update progress (throttled)
         const now = Date.now();
@@ -357,10 +382,26 @@ export const useWebRTC = (
           return 'channel_closed';
         }
         
-        console.error(`❌ Error sending chunk ${sequence}:`, error);
-        if (!ctx.pendingResends.includes(sequence)) {
-          ctx.pendingResends.push(sequence);
+        // Track retry count for this chunk
+        const retries = (chunkRetryCount.get(sequence) || 0) + 1;
+        chunkRetryCount.set(sequence, retries);
+        consecutiveErrors++;
+        
+        if (retries >= MAX_CHUNK_RETRIES) {
+          console.error(`❌ Chunk ${sequence} failed after ${MAX_CHUNK_RETRIES} retries`);
+          return 'retry_exhausted';
         }
+        
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          console.error(`❌ Too many consecutive errors (${consecutiveErrors}), aborting transfer`);
+          return 'retry_exhausted';
+        }
+        
+        console.warn(`⚠️ Error sending chunk ${sequence} (attempt ${retries}/${MAX_CHUNK_RETRIES}):`, error?.message || error);
+        
+        // Wait a bit before retry
+        await delay(100 * retries); // Exponential backoff: 100ms, 200ms, 300ms
+        
         return 'error';
       }
     };
@@ -375,15 +416,15 @@ export const useWebRTC = (
             return;
           }
           
-          if (dataChannel.bufferedAmount < 64 * 1024) {
+          if (dataChannel.bufferedAmount < BUFFER_LOW_WATERMARK) {
             resolve(true);
           } else {
-            setTimeout(check, 50);
+            setTimeout(check, 20); // Check more frequently
           }
         };
         
         if (dataChannel.bufferedAmountLowThreshold !== undefined) {
-          dataChannel.bufferedAmountLowThreshold = 64 * 1024;
+          dataChannel.bufferedAmountLowThreshold = BUFFER_LOW_WATERMARK;
           const originalHandler = dataChannel.onbufferedamountlow;
           dataChannel.onbufferedamountlow = () => {
             dataChannel.onbufferedamountlow = originalHandler;
@@ -393,6 +434,38 @@ export const useWebRTC = (
           check();
         }
       });
+    };
+
+    // Helper to send a chunk with retry logic
+    const sendChunkWithRetry = async (seq: number): Promise<'sent' | 'channel_closed' | 'failed'> => {
+      let attempts = 0;
+      const maxAttempts = MAX_CHUNK_RETRIES;
+      
+      while (attempts < maxAttempts) {
+        const result = await sendSingleChunk(seq);
+        
+        if (result === 'sent') {
+          return 'sent';
+        }
+        
+        if (result === 'channel_closed' || result === 'retry_exhausted') {
+          return result === 'channel_closed' ? 'channel_closed' : 'failed';
+        }
+        
+        // Error - will retry
+        attempts++;
+        
+        // Wait for buffer to clear before retrying
+        if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > BUFFER_LOW_WATERMARK) {
+          console.log(`⏳ Waiting for buffer to drain before retry...`);
+          const canContinue = await waitForBuffer();
+          if (!canContinue) {
+            return 'channel_closed';
+          }
+        }
+      }
+      
+      return 'failed';
     };
 
     // Process resends first
@@ -409,9 +482,9 @@ export const useWebRTC = (
       
       const seq = ctx.pendingResends.shift()!;
       ctx.sentChunks.delete(seq); // Remove so we can resend
-      const result = await sendSingleChunk(seq);
+      const result = await sendChunkWithRetry(seq);
       
-      if (result === 'channel_closed') {
+      if (result === 'channel_closed' || result === 'failed') {
         setTransfers(prev => prev.map(t => 
           t.id === transferId ? { ...t, status: 'failed' } : t
         ));
@@ -419,7 +492,9 @@ export const useWebRTC = (
         return;
       }
       
-      if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > 1024 * 1024) {
+      // Flow control with lower threshold
+      if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > BUFFER_HIGH_WATERMARK) {
+        console.log(`⏸️ Buffer high (${Math.round(dataChannel.bufferedAmount / 1024)}KB), waiting...`);
         const canContinue = await waitForBuffer();
         if (!canContinue) {
           setTransfers(prev => prev.map(t => 
@@ -444,9 +519,9 @@ export const useWebRTC = (
       }
       
       if (!ctx.sentChunks.has(seq)) {
-        const result = await sendSingleChunk(seq);
+        const result = await sendChunkWithRetry(seq);
         
-        if (result === 'channel_closed') {
+        if (result === 'channel_closed' || result === 'failed') {
           setTransfers(prev => prev.map(t => 
             t.id === transferId ? { ...t, status: 'failed' } : t
           ));
@@ -454,9 +529,15 @@ export const useWebRTC = (
           return;
         }
         
-        // Flow control (with state check)
-        if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > 1024 * 1024) {
-          console.log(`⏸️ Buffer full, waiting...`);
+        // Adaptive pacing - add delay based on buffer state
+        const adaptiveDelay = getAdaptiveDelay();
+        if (adaptiveDelay > 0) {
+          await delay(adaptiveDelay);
+        }
+        
+        // Flow control with lower threshold
+        if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > BUFFER_HIGH_WATERMARK) {
+          console.log(`⏸️ Buffer high (${Math.round(dataChannel.bufferedAmount / 1024)}KB), waiting...`);
           const canContinue = await waitForBuffer();
           if (!canContinue) {
             setTransfers(prev => prev.map(t => 

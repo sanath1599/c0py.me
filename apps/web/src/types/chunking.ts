@@ -37,12 +37,13 @@ export interface ChunkConfig {
 }
 
 // Chunk size constants based on device type and file size
+// Note: Smaller chunks are more reliable for WebRTC data channels
 export const CHUNK_SIZES = {
   MOBILE_SMALL: 8 * 1024,      // 8KB for mobile files < 50MB
   MOBILE_LARGE: 16 * 1024,     // 16KB for mobile files >= 50MB
-  DESKTOP_SMALL: 64 * 1024,    // 64KB for desktop files < 100MB
-  DESKTOP_MEDIUM: 128 * 1024,  // 128KB for desktop files 100MB-500MB
-  DESKTOP_LARGE: 256 * 1024,   // 256KB for desktop files > 500MB
+  DESKTOP_SMALL: 32 * 1024,    // 32KB for desktop files < 100MB (reduced for reliability)
+  DESKTOP_MEDIUM: 64 * 1024,   // 64KB for desktop files 100MB-500MB (reduced for reliability)
+  DESKTOP_LARGE: 64 * 1024,    // 64KB for desktop files > 500MB (reduced for reliability)
 } as const;
 
 // File size thresholds in bytes
