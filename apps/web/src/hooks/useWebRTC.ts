@@ -72,6 +72,7 @@ export const useWebRTC = (
     chunkIndex: number;
     expectedChunks: number;
     receivedChunkIndices: Set<number>;
+    pendingChunkOperations: Promise<void>[]; // Track pending async chunk storage operations
   }>>(new Map());
   const pendingFilesRef = useRef<Map<string, { file: File; peer: any; transferId: string }>>(new Map());
   const [completedReceived, setCompletedReceived] = useState<Array<{
@@ -597,6 +598,154 @@ export const useWebRTC = (
     readSlice();
   };
 
+  // Helper function to process file reconstruction after verification
+  const processFileReconstruction = async (
+    receivedFile: { 
+      name: string; 
+      size: number; 
+      type: string; 
+      receivedSize: number;
+      blobParts: BlobPart[];
+      useIndexedDB: boolean;
+      transferId: string;
+    },
+    from: string
+  ) => {
+    let blob: Blob;
+    let reconstructionError: Error | null = null;
+    
+    try {
+      if (receivedFile.useIndexedDB) {
+        const { reconstructFileFromIDB, cleanupTransfer } = await import('../utils/indexedDB');
+        try {
+          console.log('📦 Reconstructing file from IndexedDB...');
+          blob = await reconstructFileFromIDB(receivedFile.transferId);
+          console.log(`✅ Reconstructed blob from IndexedDB: ${blob.size} bytes`);
+          
+          // Verify blob size
+          if (blob.size !== receivedFile.size) {
+            throw new Error(`Blob size mismatch: expected ${receivedFile.size}, got ${blob.size}`);
+          }
+          
+          await cleanupTransfer(receivedFile.transferId);
+          console.log('🧹 Cleaned up IndexedDB entries');
+        } catch (error) {
+          reconstructionError = error instanceof Error ? error : new Error(String(error));
+          console.error('❌ Failed to reconstruct from IndexedDB:', reconstructionError);
+          
+          // Try fallback to memory if available
+          if (receivedFile.blobParts.length > 0) {
+            console.log('🔄 Attempting fallback to memory reconstruction...');
+            try {
+              blob = new Blob(receivedFile.blobParts, { type: receivedFile.type });
+              if (blob.size !== receivedFile.size) {
+                throw new Error(`Memory blob size mismatch: expected ${receivedFile.size}, got ${blob.size}`);
+              }
+              console.log('✅ Fallback to memory successful');
+              reconstructionError = null;
+            } catch (fallbackError) {
+              console.error('❌ Fallback to memory also failed:', fallbackError);
+              throw reconstructionError; // Re-throw original error
+            }
+          } else {
+            throw reconstructionError;
+          }
+        }
+      } else {
+        console.log('📝 Reconstructing file from memory...');
+        if (receivedFile.blobParts.length === 0) {
+          throw new Error('No blob parts available for reconstruction');
+        }
+        blob = new Blob(receivedFile.blobParts, { type: receivedFile.type });
+        console.log(`✅ Reconstructed blob from memory: ${blob.size} bytes`);
+        
+        // Verify blob size
+        if (blob.size !== receivedFile.size) {
+          throw new Error(`Blob size mismatch: expected ${receivedFile.size}, got ${blob.size}`);
+        }
+      }
+      
+      // Create object URL
+      const url = URL.createObjectURL(blob);
+      console.log('🔗 Created object URL for download');
+      
+      // Create File object (for large files, this might be slow but necessary)
+      let file: File;
+      try {
+        file = new File([blob], receivedFile.name, { 
+          type: receivedFile.type,
+          lastModified: Date.now()
+        });
+        console.log('📄 Created File object');
+      } catch (fileError) {
+        console.error('❌ Failed to create File object:', fileError);
+        // For very large files, File constructor might fail
+        // Store blob directly and handle download differently
+        throw new Error('File object creation failed - file may be too large');
+      }
+      
+      // Store for transfer complete modal
+      setCompletedReceived(prev => [
+        ...prev,
+        {
+          id: `completed-${Date.now()}-${Math.random()}`,
+          file,
+          url,
+          peer: { 
+            id: from, 
+            name: getPeerName(from), 
+            emoji: '📱', 
+            color: '#F6C148' 
+          }
+        }
+      ]);
+      
+      const transferIdToComplete = receivedFile.transferId;
+      receivedFilesRef.current.delete(from);
+      
+      // Update transfer status by transferId
+      setTransfers(prev => prev.map(t => 
+        t.id === transferIdToComplete && t.status === 'transferring' 
+          ? { ...t, status: 'completed', progress: 100 } 
+          : t
+      ));
+      
+      // Track file received
+      logSystemEvent.fileReceived(receivedFile.type, receivedFile.size);
+      
+      // Play success sound
+      playSuccessSound();
+      
+      // Show success notification
+      if (addToast) {
+        addToast('success', `File received: ${receivedFile.name} from ${getPeerName(from)}`);
+      }
+      
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('File Received', {
+          body: `Successfully received ${receivedFile.name} from ${getPeerName(from)}`,
+          icon: '/favicon.ico'
+        });
+      }
+    } catch (error) {
+      console.error('❌ File reconstruction failed:', error);
+      const transferIdToComplete = receivedFile.transferId;
+      receivedFilesRef.current.delete(from);
+      
+      // Update transfer status to failed
+      setTransfers(prev => prev.map(t => 
+        t.id === transferIdToComplete && t.status === 'transferring' 
+          ? { ...t, status: 'failed' } 
+          : t
+      ));
+      
+      if (addToast) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        addToast('error', `Failed to reconstruct file: ${receivedFile.name}. ${errorMsg}`);
+      }
+    }
+  };
+
   const handleSignal = useCallback(async (from: string, data: any) => {
     console.log(`📡 Received signal from ${from}:`, data.type);
     
@@ -690,7 +839,8 @@ export const useWebRTC = (
                     transferId: transferId,
                     chunkIndex: 0,
                     expectedChunks: expectedChunks,
-                    receivedChunkIndices: new Set<number>()
+                    receivedChunkIndices: new Set<number>(),
+                    pendingChunkOperations: [] // Track pending async chunk storage operations
                   });
                   
                   // Add transfer immediately
@@ -771,179 +921,93 @@ export const useWebRTC = (
                   if (receivedFile) {
                     console.log(`📥 File transfer complete. Received: ${receivedFile.receivedSize} / ${receivedFile.size} bytes`);
                     
-                    // Verify we received the complete file
-                    if (receivedFile.receivedSize !== receivedFile.size) {
-                      console.error(`❌ File size mismatch! Expected: ${receivedFile.size}, Received: ${receivedFile.receivedSize}`);
-                      setTransfers(prev => prev.map(t => 
-                        t.id === receivedFile.transferId && t.status === 'transferring' 
-                          ? { ...t, status: 'failed' } 
-                          : t
-                      ));
-                      if (addToast) {
-                        addToast('error', `File transfer incomplete: ${receivedFile.name}`);
-                      }
-                      return;
-                    }
-                    
-                    // For IndexedDB files, verify we have all chunks
-                    if (receivedFile.useIndexedDB) {
-                      const missingChunks: number[] = [];
-                      for (let i = 0; i < receivedFile.expectedChunks; i++) {
-                        if (!receivedFile.receivedChunkIndices.has(i)) {
-                          missingChunks.push(i);
+                    // Wait for all pending async chunk storage operations to complete
+                    // This ensures IndexedDB operations finish before verification
+                    (async () => {
+                      try {
+                        // Wait for all pending chunk storage operations (especially for IndexedDB)
+                        if (receivedFile.pendingChunkOperations.length > 0) {
+                          console.log(`⏳ Waiting for ${receivedFile.pendingChunkOperations.length} pending chunk operations to complete...`);
+                          await Promise.all(receivedFile.pendingChunkOperations);
+                          console.log(`✅ All chunk storage operations completed`);
+                          
+                          // Additional wait to ensure IndexedDB transactions are committed
+                          await new Promise(resolve => setTimeout(resolve, 200));
+                        } else {
+                          // Small delay even if no pending operations (for consistency)
+                          await new Promise(resolve => setTimeout(resolve, 50));
                         }
-                      }
-                      if (missingChunks.length > 0) {
-                        console.error(`❌ Missing chunks: ${missingChunks.slice(0, 10).join(', ')}${missingChunks.length > 10 ? `... (${missingChunks.length} total)` : ''}`);
+                        
+                        // Verify we received the complete file
+                        // Allow small tolerance for rounding errors (1 byte)
+                        const sizeDifference = Math.abs(receivedFile.receivedSize - receivedFile.size);
+                        if (sizeDifference > 1) {
+                          console.error(`❌ File size mismatch! Expected: ${receivedFile.size}, Received: ${receivedFile.receivedSize}, Difference: ${sizeDifference}`);
+                          setTransfers(prev => prev.map(t => 
+                            t.id === receivedFile.transferId && t.status === 'transferring' 
+                              ? { ...t, status: 'failed' } 
+                              : t
+                          ));
+                          if (addToast) {
+                            addToast('error', `File transfer incomplete: ${receivedFile.name} (size mismatch: ${sizeDifference} bytes)`);
+                          }
+                          return;
+                        }
+                        
+                        // For IndexedDB files, verify we have all chunks
+                        if (receivedFile.useIndexedDB) {
+                          console.log(`🔍 Verifying chunks: expected ${receivedFile.expectedChunks}, received indices: ${Array.from(receivedFile.receivedChunkIndices).sort((a, b) => a - b).slice(0, 20).join(', ')}${receivedFile.receivedChunkIndices.size > 20 ? '...' : ''}`);
+                          
+                          const missingChunks: number[] = [];
+                          for (let i = 0; i < receivedFile.expectedChunks; i++) {
+                            if (!receivedFile.receivedChunkIndices.has(i)) {
+                              missingChunks.push(i);
+                            }
+                          }
+                          
+                          if (missingChunks.length > 0) {
+                            console.error(`❌ Missing chunks: ${missingChunks.slice(0, 10).join(', ')}${missingChunks.length > 10 ? `... (${missingChunks.length} total)` : ''}`);
+                            console.error(`   Expected: ${receivedFile.expectedChunks}, Received: ${receivedFile.receivedChunkIndices.size}, Missing: ${missingChunks.length}`);
+                            console.error(`   Received size: ${receivedFile.receivedSize}, Expected size: ${receivedFile.size}`);
+                            
+                            setTransfers(prev => prev.map(t => 
+                              t.id === receivedFile.transferId && t.status === 'transferring' 
+                                ? { ...t, status: 'failed' } 
+                                : t
+                            ));
+                            if (addToast) {
+                              addToast('error', `File transfer incomplete: missing ${missingChunks.length} chunks`);
+                            }
+                            return;
+                          }
+                          console.log(`✅ All ${receivedFile.expectedChunks} chunks received and verified`);
+                        } else {
+                          // For memory files, verify we have the right number of blob parts
+                          const expectedBlobParts = receivedFile.expectedChunks;
+                          if (receivedFile.blobParts.length !== expectedBlobParts) {
+                            console.warn(`⚠️ Blob parts count mismatch: expected ${expectedBlobParts}, got ${receivedFile.blobParts.length}`);
+                            // This is a warning, not an error, as long as the total size matches
+                          }
+                        }
+                        
+                        // Continue with file reconstruction
+                        await processFileReconstruction(receivedFile, from);
+                      } catch (error) {
+                        console.error('❌ Error during file verification:', error);
                         setTransfers(prev => prev.map(t => 
                           t.id === receivedFile.transferId && t.status === 'transferring' 
                             ? { ...t, status: 'failed' } 
                             : t
                         ));
                         if (addToast) {
-                          addToast('error', `File transfer incomplete: missing ${missingChunks.length} chunks`);
-                        }
-                        return;
-                      }
-                      console.log(`✅ All ${receivedFile.expectedChunks} chunks received`);
-                    }
-                    
-                    // Reconstruct file from IndexedDB or memory
-                    (async () => {
-                      let blob: Blob;
-                      let reconstructionError: Error | null = null;
-                      
-                      try {
-                        if (receivedFile.useIndexedDB) {
-                          const { reconstructFileFromIDB, cleanupTransfer } = await import('../utils/indexedDB');
-                          try {
-                            console.log('📦 Reconstructing file from IndexedDB...');
-                            blob = await reconstructFileFromIDB(receivedFile.transferId);
-                            console.log(`✅ Reconstructed blob from IndexedDB: ${blob.size} bytes`);
-                            
-                            // Verify blob size
-                            if (blob.size !== receivedFile.size) {
-                              throw new Error(`Blob size mismatch: expected ${receivedFile.size}, got ${blob.size}`);
-                            }
-                            
-                            await cleanupTransfer(receivedFile.transferId);
-                            console.log('🧹 Cleaned up IndexedDB entries');
-                          } catch (error) {
-                            reconstructionError = error instanceof Error ? error : new Error(String(error));
-                            console.error('❌ Failed to reconstruct from IndexedDB:', reconstructionError);
-                            
-                            // Try fallback to memory if available
-                            if (receivedFile.blobParts.length > 0) {
-                              console.log('🔄 Attempting fallback to memory reconstruction...');
-                              try {
-                                blob = new Blob(receivedFile.blobParts, { type: receivedFile.type });
-                                if (blob.size !== receivedFile.size) {
-                                  throw new Error(`Memory blob size mismatch: expected ${receivedFile.size}, got ${blob.size}`);
-                                }
-                                console.log('✅ Fallback to memory successful');
-                                reconstructionError = null;
-                              } catch (fallbackError) {
-                                console.error('❌ Fallback to memory also failed:', fallbackError);
-                                throw reconstructionError; // Re-throw original error
-                              }
-                            } else {
-                              throw reconstructionError;
-                            }
-                          }
-                        } else {
-                          console.log('📝 Reconstructing file from memory...');
-                          if (receivedFile.blobParts.length === 0) {
-                            throw new Error('No blob parts available for reconstruction');
-                          }
-                          blob = new Blob(receivedFile.blobParts, { type: receivedFile.type });
-                          console.log(`✅ Reconstructed blob from memory: ${blob.size} bytes`);
-                          
-                          // Verify blob size
-                          if (blob.size !== receivedFile.size) {
-                            throw new Error(`Blob size mismatch: expected ${receivedFile.size}, got ${blob.size}`);
-                          }
-                        }
-                        
-                        // Create object URL
-                        const url = URL.createObjectURL(blob);
-                        console.log('🔗 Created object URL for download');
-                        
-                        // Create File object (for large files, this might be slow but necessary)
-                        let file: File;
-                        try {
-                          file = new File([blob], receivedFile.name, { 
-                            type: receivedFile.type,
-                            lastModified: Date.now()
-                          });
-                          console.log('📄 Created File object');
-                        } catch (fileError) {
-                          console.error('❌ Failed to create File object:', fileError);
-                          // For very large files, File constructor might fail
-                          // Store blob directly and handle download differently
-                          throw new Error('File object creation failed - file may be too large');
-                        }
-                        
-                        // Store for transfer complete modal
-                        setCompletedReceived(prev => [
-                          ...prev,
-                          {
-                            id: `completed-${Date.now()}-${Math.random()}`,
-                            file,
-                            url,
-                            peer: { 
-                              id: from, 
-                              name: getPeerName(from), 
-                              emoji: '📱', 
-                              color: '#F6C148' 
-                            }
-                          }
-                        ]);
-                        
-                        const transferIdToComplete = receivedFile.transferId;
-                        receivedFilesRef.current.delete(from);
-                        
-                        // Update transfer status by transferId
-                        setTransfers(prev => prev.map(t => 
-                          t.id === transferIdToComplete && t.status === 'transferring' 
-                            ? { ...t, status: 'completed', progress: 100 } 
-                            : t
-                        ));
-                        
-                        // Track file received
-                        logSystemEvent.fileReceived(receivedFile.type, receivedFile.size);
-                        
-                        // Play success sound
-                        playSuccessSound();
-                        
-                        // Show success notification
-                        if (addToast) {
-                          addToast('success', `File received: ${receivedFile.name} from ${getPeerName(from)}`);
-                        }
-                        
-                        if ('Notification' in window && Notification.permission === 'granted') {
-                          new Notification('File Received', {
-                            body: `Successfully received ${receivedFile.name} from ${getPeerName(from)}`,
-                            icon: '/favicon.ico'
-                          });
-                        }
-                      } catch (error) {
-                        console.error('❌ File reconstruction failed:', error);
-                        const transferIdToComplete = receivedFile.transferId;
-                        receivedFilesRef.current.delete(from);
-                        
-                        // Update transfer status to failed
-                        setTransfers(prev => prev.map(t => 
-                          t.id === transferIdToComplete && t.status === 'transferring' 
-                            ? { ...t, status: 'failed' } 
-                            : t
-                        ));
-                        
-                        if (addToast) {
-                          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-                          addToast('error', `Failed to reconstruct file: ${receivedFile.name}. ${errorMsg}`);
+                          addToast('error', `File transfer verification failed: ${receivedFile.name}`);
                         }
                       }
                     })();
+                  } else {
+                    console.error('❌ Received file-end but no file metadata found');
+                  }
+                }
                   } else {
                     console.error('❌ Received file-end but no file metadata found');
                   }
@@ -967,16 +1031,17 @@ export const useWebRTC = (
               
               // Store chunk to IndexedDB or memory (async, non-blocking)
               // For large files, prioritize IndexedDB; for small files, use memory
+              // IMPORTANT: Increment chunkIndex immediately to ensure sequential tracking
               const currentChunkIndex = receivedFile.chunkIndex;
+              receivedFile.chunkIndex++;
+              receivedFile.receivedChunkIndices.add(currentChunkIndex);
               
               if (receivedFile.useIndexedDB) {
-                // Store to IndexedDB asynchronously
-                (async () => {
+                // Store to IndexedDB asynchronously, but track the promise
+                const chunkPromise = (async () => {
                   try {
                     const { storeIncomingChunk } = await import('../utils/indexedDB');
                     await storeIncomingChunk(receivedFile.transferId, currentChunkIndex, event.data);
-                    receivedFile.chunkIndex++;
-                    receivedFile.receivedChunkIndices.add(currentChunkIndex);
                     
                     // Log progress for large files every 100 chunks
                     if (receivedFile.expectedChunks > 100 && currentChunkIndex % 100 === 0) {
@@ -986,14 +1051,22 @@ export const useWebRTC = (
                     console.error(`Failed to store chunk ${currentChunkIndex} to IndexedDB:`, error);
                     // Fallback to memory if IndexedDB fails
                     receivedFile.blobParts.push(event.data);
-                    receivedFile.receivedChunkIndices.add(currentChunkIndex);
                   }
                 })();
+                
+                // Track the promise so we can wait for it before verification
+                receivedFile.pendingChunkOperations.push(chunkPromise);
+                
+                // Clean up completed promises to prevent memory leak
+                chunkPromise.finally(() => {
+                  const index = receivedFile.pendingChunkOperations.indexOf(chunkPromise);
+                  if (index > -1) {
+                    receivedFile.pendingChunkOperations.splice(index, 1);
+                  }
+                });
               } else {
                 // Store to memory synchronously for small files
                 receivedFile.blobParts.push(event.data);
-                receivedFile.receivedChunkIndices.add(currentChunkIndex);
-                receivedFile.chunkIndex++;
               }
               
               // Throttled progress update (synchronous calculation, async state update)
@@ -1168,7 +1241,8 @@ export const useWebRTC = (
         transferId: transferId,
         chunkIndex: 0,
         expectedChunks: 0, // Will be set when file-start is received
-        receivedChunkIndices: new Set<number>()
+        receivedChunkIndices: new Set<number>(),
+        pendingChunkOperations: []
       });
       
       console.log('✅ File acceptance sent, transfer started');
