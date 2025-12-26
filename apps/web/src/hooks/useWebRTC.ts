@@ -732,9 +732,10 @@ export const useWebRTC = (
     
     try {
       if (receivedFile.useIndexedDB) {
-        const { reconstructFileFromIDB, cleanupTransfer } = await import('../utils/indexedDB');
+        const { reconstructFileFromIDB, cleanupTransfer, initDB } = await import('../utils/indexedDB');
         try {
           console.log('📦 Reconstructing file from IndexedDB...');
+          console.log(`   Using transferId: ${receivedFile.transferId}`);
           blob = await reconstructFileFromIDB(receivedFile.transferId);
           console.log(`✅ Reconstructed blob from IndexedDB: ${blob.size} bytes`);
           
@@ -749,8 +750,48 @@ export const useWebRTC = (
           reconstructionError = error instanceof Error ? error : new Error(String(error));
           console.error('❌ Failed to reconstruct from IndexedDB:', reconstructionError);
           
+          // If metadata is missing, try to reconstruct directly from chunks
+          if (reconstructionError.message.includes('Metadata not found')) {
+            console.log('🔄 Metadata missing, attempting direct chunk reconstruction...');
+            try {
+              const db = await initDB();
+              const transaction = db.transaction(['incoming-chunks'], 'readonly');
+              const store = transaction.objectStore('incoming-chunks');
+              const index = store.index('transferId');
+              
+              const chunks = await new Promise<any[]>((resolve, reject) => {
+                const request = index.getAll(receivedFile.transferId);
+                request.onsuccess = () => resolve(request.result || []);
+                request.onerror = () => reject(new Error('Failed to get chunks'));
+              });
+              
+              if (chunks.length > 0) {
+                // Sort chunks by chunkIndex
+                chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+                const chunkData = chunks.map(item => item.chunk);
+                blob = new Blob(chunkData, { type: receivedFile.type });
+                
+                console.log(`✅ Reconstructed from ${chunks.length} chunks: ${blob.size} bytes`);
+                
+                // Verify size
+                if (blob.size !== receivedFile.size) {
+                  throw new Error(`Blob size mismatch: expected ${receivedFile.size}, got ${blob.size}`);
+                }
+                
+                // Clean up
+                await cleanupTransfer(receivedFile.transferId);
+                reconstructionError = null;
+              } else {
+                throw new Error('No chunks found in IndexedDB');
+              }
+            } catch (directReconstructError) {
+              console.error('❌ Direct chunk reconstruction failed:', directReconstructError);
+              // Continue to fallback to memory
+            }
+          }
+          
           // Try fallback to memory if available
-          if (receivedFile.blobParts.length > 0) {
+          if (reconstructionError && receivedFile.blobParts.length > 0) {
             console.log('🔄 Attempting fallback to memory reconstruction...');
             try {
               blob = new Blob(receivedFile.blobParts, { type: receivedFile.type });
@@ -761,9 +802,12 @@ export const useWebRTC = (
               reconstructionError = null;
             } catch (fallbackError) {
               console.error('❌ Fallback to memory also failed:', fallbackError);
-              throw reconstructionError; // Re-throw original error
+              if (reconstructionError) {
+                throw reconstructionError; // Re-throw original error
+              }
+              throw fallbackError;
             }
-          } else {
+          } else if (reconstructionError) {
             throw reconstructionError;
           }
         }
@@ -933,15 +977,36 @@ export const useWebRTC = (
                 } else if (message.type === 'file-start') {
                   console.log('📥 Receiving file:', message.name);
                   
-                  // Determine if we should use IndexedDB (async operation)
-                  const transferId = `receive-${from}-${Date.now()}-${Math.random()}`;
-                  const startTime = Date.now();
+                  // Check if we already have a receivedFile entry (from acceptIncomingFile)
+                  // If so, reuse its transferId to ensure consistency
+                  let existingReceivedFile = receivedFilesRef.current.get(from);
+                  let transferId: string;
+                  let startTime: number;
+                  
+                  if (existingReceivedFile && existingReceivedFile.transferId) {
+                    // Reuse existing transferId
+                    transferId = existingReceivedFile.transferId;
+                    startTime = existingReceivedFile.startTime;
+                    console.log(`🔄 Reusing existing transferId: ${transferId}`);
+                    
+                    // Update the existing entry with file-start metadata
+                    existingReceivedFile.name = message.name;
+                    existingReceivedFile.size = message.size;
+                    existingReceivedFile.type = message.fileType;
+                    existingReceivedFile.expectedChunks = Math.ceil(message.size / (message.chunkSize || 8192));
+                  } else {
+                    // Create new transferId
+                    transferId = `receive-${from}-${Date.now()}-${Math.random()}`;
+                    startTime = Date.now();
+                  }
                   
                   // Calculate expected chunk count
                   const chunkSize = message.chunkSize || 8192;
                   const expectedChunks = Math.ceil(message.size / chunkSize);
                   
                   // Set up received file immediately (synchronously) to avoid race conditions
+                  // Only create new entry if it doesn't exist (wasn't created by acceptIncomingFile)
+                  if (!existingReceivedFile) {
                   receivedFilesRef.current.set(from, {
                     name: message.name,
                     size: message.size,
@@ -950,15 +1015,24 @@ export const useWebRTC = (
                     blobParts: [],
                     startTime: startTime,
                     lastProgressUpdate: 0,
-                    lastProgressSize: 0, // Track size at last progress update
+                      lastProgressSize: 0, // Track size at last progress update
                     useIndexedDB: false, // Will be updated async
                     transferId: transferId,
                     chunkIndex: 0,
                     expectedChunks: expectedChunks,
-                    receivedChunkIndices: new Set<number>(),
-                    pendingChunkOperations: [], // Track pending async chunk storage operations
-                    nextRetryChunkIndex: undefined // Track chunk index for retry chunks
-                  });
+                      receivedChunkIndices: new Set<number>(),
+                      pendingChunkOperations: [], // Track pending async chunk storage operations
+                      nextRetryChunkIndex: undefined // Track chunk index for retry chunks
+                    });
+                  } else {
+                    // Update existing entry - ensure all fields are set correctly
+                    existingReceivedFile.expectedChunks = expectedChunks;
+                    existingReceivedFile.chunkIndex = 0;
+                    existingReceivedFile.receivedSize = 0;
+                    existingReceivedFile.receivedChunkIndices.clear();
+                    existingReceivedFile.pendingChunkOperations = [];
+                    existingReceivedFile.nextRetryChunkIndex = undefined;
+                  }
                   
                   // Add transfer immediately
                   setTransfers(prev => {
@@ -1063,8 +1137,8 @@ export const useWebRTC = (
                           // Small delay even if no pending operations (for consistency)
                           await new Promise(resolve => setTimeout(resolve, 50));
                         }
-                        
-                        // Verify we received the complete file
+                    
+                    // Verify we received the complete file
                         // Allow small tolerance for rounding errors (1 byte)
                         const sizeDifference = Math.abs(receivedFile.receivedSize - receivedFile.size);
                         if (sizeDifference > 1) {
@@ -1094,31 +1168,31 @@ export const useWebRTC = (
                                 chunkIndices: missingChunkIndices
                               }));
                               
-                              setTransfers(prev => prev.map(t => 
-                                t.id === receivedFile.transferId && t.status === 'transferring' 
+                      setTransfers(prev => prev.map(t => 
+                        t.id === receivedFile.transferId && t.status === 'transferring' 
                                   ? { ...t, status: 'transferring' } // Keep as transferring during retry
-                                  : t
-                              ));
+                          : t
+                      ));
                               
-                              if (addToast) {
+                      if (addToast) {
                                 addToast('info', `Requesting retry for ${missingChunkIndices.length} missing chunks...`);
-                              }
+                      }
                               
                               // Don't return - wait for retry chunks
-                              return;
-                            }
+                      return;
+                    }
                           }
                           
                           // If we can't retry, mark as failed
-                          setTransfers(prev => prev.map(t => 
-                            t.id === receivedFile.transferId && t.status === 'transferring' 
-                              ? { ...t, status: 'failed' } 
-                              : t
-                          ));
-                          if (addToast) {
+                        setTransfers(prev => prev.map(t => 
+                          t.id === receivedFile.transferId && t.status === 'transferring' 
+                            ? { ...t, status: 'failed' } 
+                            : t
+                        ));
+                        if (addToast) {
                             addToast('error', `File transfer incomplete: ${receivedFile.name} (size mismatch: ${sizeDifference} bytes)`);
-                          }
-                          return;
+                        }
+                        return;
                         }
                         
                         // Verify chunks - prioritize size check over chunk index tracking
@@ -1184,12 +1258,12 @@ export const useWebRTC = (
                                     chunkIndices: missing
                                   }));
                                   
-                                  setTransfers(prev => prev.map(t => 
+                        setTransfers(prev => prev.map(t => 
                                     t.id === receivedFile.transferId && t.status === 'transferring' 
                                       ? { ...t, status: 'transferring' } // Keep as transferring during retry
-                                      : t
-                                  ));
-                                  
+                            : t
+                        ));
+                        
                                   if (addToast) {
                                     addToast('info', `Requesting retry for ${missing.length} missing chunks...`);
                                   }
@@ -1204,24 +1278,24 @@ export const useWebRTC = (
                                     ? { ...t, status: 'failed' } 
                                     : t
                                 ));
-                                if (addToast) {
+                        if (addToast) {
                                   addToast('error', `File transfer incomplete: missing ${missing.length} chunks`);
                                 }
                                 return;
                               }
                             } else {
                               console.log(`✅ All ${receivedFile.expectedChunks} chunks verified in IndexedDB`);
-                            }
-                          } catch (error) {
+                        }
+                      } catch (error) {
                             console.error('❌ Error verifying chunks in IndexedDB:', error);
                             // Fall back to size check - if size matches, proceed
                             if (!sizeMatches) {
                               console.error(`❌ Size mismatch: received ${receivedFile.receivedSize}, expected ${receivedFile.size}`);
-                              setTransfers(prev => prev.map(t => 
+                        setTransfers(prev => prev.map(t => 
                                 t.id === receivedFile.transferId && t.status === 'transferring' 
-                                  ? { ...t, status: 'failed' } 
-                                  : t
-                              ));
+                            ? { ...t, status: 'failed' } 
+                            : t
+                        ));
                               if (addToast) {
                                 addToast('error', `File transfer incomplete: size mismatch`);
                               }
@@ -1499,7 +1573,10 @@ export const useWebRTC = (
       setIncomingFiles(prev => prev.filter(f => f.id !== incomingFileId));
       
       // Add to transfers list
-      const transferId = `receive-${Date.now()}-${Math.random()}`;
+      // Use consistent transferId format that matches file-start handler
+      const transferId = `receive-${incomingFile.from}-${Date.now()}-${Math.random()}`;
+      const startTime = Date.now();
+      
       setTransfers(prev => [...prev, {
         id: transferId,
         file: new File([new ArrayBuffer(incomingFile.fileSize)], incomingFile.fileName, { type: incomingFile.fileType }),
@@ -1516,24 +1593,26 @@ export const useWebRTC = (
         timeRemaining: 0
       }]);
       
-      // Set up file receiving
+      // Set up file receiving - this will be updated when file-start arrives
       receivedFilesRef.current.set(incomingFile.from, {
         name: incomingFile.fileName,
         size: incomingFile.fileSize,
         type: incomingFile.fileType,
         receivedSize: 0,
         blobParts: [],
-        startTime: Date.now(),
+        startTime: startTime,
         lastProgressUpdate: 0,
         lastProgressSize: 0,
         useIndexedDB: false,
-        transferId: transferId,
+        transferId: transferId, // Use consistent transferId
         chunkIndex: 0,
         expectedChunks: 0, // Will be set when file-start is received
         receivedChunkIndices: new Set<number>(),
         pendingChunkOperations: [],
         nextRetryChunkIndex: undefined
       });
+      
+      console.log(`✅ File accepted, transferId: ${transferId}`);
       
       console.log('✅ File acceptance sent, transfer started');
     } else {
