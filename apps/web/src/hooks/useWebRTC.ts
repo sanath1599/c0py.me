@@ -658,6 +658,37 @@ export const useWebRTC = (
         // Calculate chunk index based on offset
         const chunkIndex = Math.floor(offset / CHUNK_SIZE);
         
+        // ============================================
+        // TEST MODE: Skip 10 chunks for testing
+        // TODO: REMOVE THIS TEST CODE BEFORE PRODUCTION
+        // This simulates missing chunks to test retry mechanism
+        // ============================================
+        const TEST_SKIP_CHUNKS = true; // Set to false to disable test mode
+        const TEST_SKIP_COUNT = 10; // Number of chunks to skip
+        const TEST_SKIP_START = 10; // Start skipping after this many chunks
+        
+        if (TEST_SKIP_CHUNKS && chunkIndex >= TEST_SKIP_START && chunkIndex < TEST_SKIP_START + TEST_SKIP_COUNT) {
+          console.log(`🧪 TEST MODE: Skipping chunk ${chunkIndex} (simulating missing chunk)`);
+          // Skip this chunk - advance offset and continue to next chunk without sending
+          offset += chunk.byteLength;
+          if (offset < fileToSend.size) {
+            requestAnimationFrame(() => {
+              readSlice();
+            });
+          } else {
+            // Final update if we've reached the end
+            updateProgress(offset, true);
+            dataChannel.send(JSON.stringify({ type: 'file-end' }));
+            setTransfers(prev => prev.map(t => 
+              t.id === transferId ? { ...t, status: 'completed', progress: 100 } : t
+            ));
+          }
+          return;
+        }
+        // ============================================
+        // END TEST MODE
+        // ============================================
+        
         // Send chunk metadata before the chunk data
         dataChannel.send(JSON.stringify({
           type: 'chunk',
@@ -1335,9 +1366,16 @@ export const useWebRTC = (
                               chunkIndices: missingChunkIndices
                             }));
                             
+                      // Set retry tracking on receiver side
                       setTransfers(prev => prev.map(t => 
                         t.id === receivedFile.transferId && t.status === 'transferring' 
-                                ? { ...t, status: 'transferring' } // Keep as transferring during retry
+                                ? { 
+                                    ...t, 
+                                    status: 'transferring', // Keep as transferring during retry
+                                    retryRequested: missingChunkIndices.length,
+                                    retryProgress: 0,
+                                    retryReceived: 0
+                                  } 
                           : t
                       ));
                             
@@ -1429,9 +1467,16 @@ export const useWebRTC = (
                                     chunkIndices: missing
                                   }));
                                   
+                        // Set retry tracking on receiver side
                         setTransfers(prev => prev.map(t => 
                                     t.id === receivedFile.transferId && t.status === 'transferring' 
-                                      ? { ...t, status: 'transferring' } // Keep as transferring during retry
+                                      ? { 
+                                          ...t, 
+                                          status: 'transferring', // Keep as transferring during retry
+                                          retryRequested: missing.length,
+                                          retryProgress: 0,
+                                          retryReceived: 0
+                                        } 
                             : t
                         ));
                         
@@ -1667,15 +1712,9 @@ export const useWebRTC = (
                             const sizeMatches = Math.abs(receivedFile.receivedSize - receivedFile.size) <= 1;
                             
                             if (missingChunks.length === 0 && sizeMatches) {
-                              console.log(`✅ File complete after retry - file saved to disk`);
-                              setTransfers(prev => prev.map(t => 
-                                t.id === receivedFile.transferId && t.status === 'transferring' 
-                                  ? { ...t, status: 'completed', progress: 100 } 
-                                  : t
-                              ));
-                              if (addToast) {
-                                addToast('success', `File saved: ${receivedFile.name}`);
-                              }
+                              console.log(`✅ File complete after retry - file saved to disk, proceeding with reconstruction`);
+                              // Process file reconstruction to ensure file is properly saved
+                              await processFileReconstruction(receivedFile, from);
                             } else if (missingChunks.length > 0) {
                               console.warn(`⚠️ Still missing ${missingChunks.length} chunks after retry`);
                               if (addToast) {
