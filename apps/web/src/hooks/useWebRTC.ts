@@ -66,6 +66,7 @@ export const useWebRTC = (
     blobParts: BlobPart[];
     startTime: number;
     lastProgressUpdate: number;
+    lastProgressSize: number; // Track size at last progress update
     useIndexedDB: boolean;
     transferId: string;
     chunkIndex: number;
@@ -684,6 +685,7 @@ export const useWebRTC = (
                     blobParts: [],
                     startTime: startTime,
                     lastProgressUpdate: 0,
+                    lastProgressSize: 0, // Track size at last progress update
                     useIndexedDB: false, // Will be updated async
                     transferId: transferId,
                     chunkIndex: 0,
@@ -1005,6 +1007,9 @@ export const useWebRTC = (
                 ? 1024 * 1024 // 1MB absolute threshold for large files
                 : 0.1; // 0.1% for small files
               
+              // Calculate cumulative size change since last update
+              const sizeSinceLastUpdate = receivedFile.receivedSize - (receivedFile.lastProgressSize || 0);
+              
               // Always update on first chunk or if enough time has passed
               const shouldUpdate = receivedFile.lastProgressUpdate === 0 || 
                                    (now - receivedFile.lastProgressUpdate) >= PROGRESS_UPDATE_INTERVAL;
@@ -1012,16 +1017,17 @@ export const useWebRTC = (
               if (shouldUpdate) {
                 const progress = (receivedFile.receivedSize / receivedFile.size) * 100;
                 const lastProgress = receivedFile.lastProgressUpdate === 0 ? 0 : 
-                  ((receivedFile.receivedSize - chunkSize) / receivedFile.size) * 100;
+                  ((receivedFile.lastProgressSize || 0) / receivedFile.size) * 100;
                 
-                // For large files, check absolute size change; for small files, check percentage
+                // For large files, check cumulative size change since last update; for small files, check percentage
                 const progressChanged = isLargeFile
-                  ? (receivedFile.receivedSize - (receivedFile.receivedSize - chunkSize)) >= PROGRESS_CHANGE_THRESHOLD
+                  ? sizeSinceLastUpdate >= PROGRESS_CHANGE_THRESHOLD
                   : Math.abs(progress - lastProgress) >= PROGRESS_CHANGE_THRESHOLD;
                 
                 // Update if progress changed significantly or it's the first update
                 if (receivedFile.lastProgressUpdate === 0 || progressChanged) {
                   receivedFile.lastProgressUpdate = now;
+                  receivedFile.lastProgressSize = receivedFile.receivedSize; // Update tracked size
                   const elapsed = (now - receivedFile.startTime) / 1000;
                   const speed = elapsed > 0 ? receivedFile.receivedSize / elapsed : 0;
                   const timeRemaining = speed > 0 ? (receivedFile.size - receivedFile.receivedSize) / speed : 0;
@@ -1153,8 +1159,16 @@ export const useWebRTC = (
         name: incomingFile.fileName,
         size: incomingFile.fileSize,
         type: incomingFile.fileType,
-        chunks: [],
-        startTime: Date.now()
+        receivedSize: 0,
+        blobParts: [],
+        startTime: Date.now(),
+        lastProgressUpdate: 0,
+        lastProgressSize: 0,
+        useIndexedDB: false,
+        transferId: transferId,
+        chunkIndex: 0,
+        expectedChunks: 0, // Will be set when file-start is received
+        receivedChunkIndices: new Set<number>()
       });
       
       console.log('✅ File acceptance sent, transfer started');
