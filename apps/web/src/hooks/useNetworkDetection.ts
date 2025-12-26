@@ -33,7 +33,7 @@ const DEFAULT_OPTIONS: Required<NetworkDetectionOptions> = {
   maxRetries: 5,
   retryDelay: 3000,
   healthCheckInterval: 10000, // Much less frequent checks to reduce false positives
-  serverHealthUrl: '/api/health',
+  serverHealthUrl: 'https://backend.c0py.me/api/health',
   enableFallback: true,
 };
 
@@ -121,21 +121,29 @@ export const useNetworkDetection = (options: NetworkDetectionOptions = {}) => {
     }
   }, [config.serverHealthUrl]);
 
-  // Enhanced network connectivity check
+  // Enhanced network connectivity check using our own health API
   const checkNetworkConnectivity = useCallback(async (): Promise<boolean> => {
     try {
-      // Try to fetch a small resource to test actual connectivity
-      const response = await fetch('https://www.google.com/favicon.ico', {
-        method: 'HEAD',
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
+      // Use our own health check API instead of external resources to avoid CORS issues
+      const response = await fetch(config.serverHealthUrl, {
+        method: 'GET',
         cache: 'no-cache',
-        signal: AbortSignal.timeout(3000), // 3 second timeout
+        signal: controller.signal,
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
       });
+      
+      clearTimeout(timeoutId);
       return response.ok;
     } catch (error) {
       console.warn('Network connectivity check failed:', error);
       return false;
     }
-  }, []);
+  }, [config.serverHealthUrl]);
 
   // Detect error type
   const detectErrorType = useCallback((error: any): NetworkError['type'] => {

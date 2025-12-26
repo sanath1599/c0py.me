@@ -41,3 +41,6 @@ export interface EventEntry {
   sessionId: string;         // generated once per app load
   userId?: string;           // optional if logged in
 }
+
+// Re-export chunking types
+export * from './chunking';

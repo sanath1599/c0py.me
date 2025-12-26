@@ -4,19 +4,48 @@ import { formatFileSize } from '../utils/format';
 import { playChime, playSuccessSound } from '../utils/sound';
 import { logSystemEvent, logUserAction } from '../utils/eventLogger';
 
+// Import chunking system
+import { useChunkedTransfer } from './useChunkedTransfer';
+import type { TransferProgress, TransferProtocolMessage } from '../types/chunking';
+import {
+  detectDeviceType,
+  calculateChunkConfig,
+  createTransferManifest,
+  createManifestAck,
+  createBinaryChunk,
+  generateChunk,
+  parseBinaryChunk,
+  createChunkBitmap,
+  markChunkReceived,
+  detectGaps,
+  isTransferComplete,
+  assembleChunksToFile,
+  verifyBinaryChunk,
+  negotiateChunkSize,
+  HEADER_SIZE
+} from '../services/chunkingService';
+import { hashFile, hashSummary } from '../services/hashService';
+import {
+  storeChunk as storeChunkToDB,
+  cleanupTransfer,
+  isIndexedDBAvailable
+} from '../services/indexedDBService';
+
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' }
 ];
 
-const CHUNK_SIZE = 16384; // 16KB chunks
+// Feature flag to enable new chunking system
+const USE_ROBUST_CHUNKING = true;
 
 export const useWebRTC = (
   onSignal: (to: string, from: string, data: any) => void, 
   userId: string,
   addToast?: (type: 'success' | 'error' | 'info', message: string) => void,
   peers?: Array<{ id: string; name: string; emoji: string; color: string }>,
-  isConnected?: boolean
+  isConnected?: boolean,
+  onLargeFileTransfer?: (fileSize: number, fileName?: string) => void
 ) => {
   // Helper function to get peer name
   const getPeerName = useCallback((peerId: string) => {
@@ -36,7 +65,21 @@ export const useWebRTC = (
     transferId: string;
   }>>([]);
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
-  const receivedFilesRef = useRef<Map<string, { name: string; size: number; type: string; chunks: ArrayBuffer[]; startTime: number }>>(new Map());
+  const receivedFilesRef = useRef<Map<string, { 
+    name: string; 
+    size: number; 
+    type: string; 
+    chunks: ArrayBuffer[]; 
+    startTime: number;
+    // New chunking system fields
+    useRobustChunking?: boolean;
+    manifest?: any;
+    bitmap?: ReturnType<typeof createChunkBitmap>;
+    receivedChunks?: Map<number, ArrayBuffer>;
+    useIndexedDB?: boolean;
+    lastAckSeq?: number;
+    ackBatchSize?: number;
+  }>>(new Map());
   const pendingFilesRef = useRef<Map<string, { file: File; peer: any; transferId: string }>>(new Map());
   const [completedReceived, setCompletedReceived] = useState<Array<{
     id: string;
@@ -44,6 +87,20 @@ export const useWebRTC = (
     url: string;
     peer: { id: string; name: string; emoji: string; color: string };
   }>>([]);
+
+  // Robust chunking context for sender
+  const robustSendContextRef = useRef<Map<string, {
+    file: File;
+    manifest: any;
+    chunkSize: number;
+    totalChunks: number;
+    sentChunks: Set<number>;
+    pendingResends: number[];
+    isPaused: boolean;
+    startTime: number;
+    lastProgressUpdate: number;
+    useIndexedDB: boolean;
+  }>>(new Map());
 
   // Store pending request in Redis when receiver is offline
   const storePendingRequest = useCallback(async (receiverId: string, file: File, transferId: string) => {
@@ -151,6 +208,737 @@ export const useWebRTC = (
     });
   };
 
+  // ============================================================================
+  // Robust Chunking - Sender Functions
+  // ============================================================================
+
+  /**
+   * Send file using the robust chunking protocol
+   */
+  const sendFileRobust = useCallback(async (
+    dataChannel: RTCDataChannel, 
+    file: File, 
+    transferId: string,
+    peer: Peer
+  ) => {
+    console.log(`📤 [Robust] Starting chunked transfer for ${file.name}`);
+    
+    // Calculate file hash and create manifest
+    console.log(`🔐 Calculating file hash...`);
+    const manifest = await createTransferManifest(file, transferId, (progress) => {
+      if (progress.percentage % 20 === 0) {
+        console.log(`🔐 Hash progress: ${progress.percentage}%`);
+      }
+    });
+    console.log(`🔐 File hash: ${hashSummary(manifest.fileHash)}`);
+
+    const config = calculateChunkConfig(file.size, detectDeviceType());
+
+    // Show modal notification for large files
+    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+    if (file.size >= LARGE_FILE_THRESHOLD && onLargeFileTransfer) {
+      onLargeFileTransfer(file.size, file.name);
+    }
+
+    // Store send context
+    robustSendContextRef.current.set(transferId, {
+      file,
+      manifest,
+      chunkSize: config.chunkSize,
+      totalChunks: config.totalChunks,
+      sentChunks: new Set(),
+      pendingResends: [],
+      isPaused: false,
+      startTime: Date.now(),
+      lastProgressUpdate: 0,
+      useIndexedDB: config.useIndexedDB
+    });
+
+    // Send manifest
+    console.log(`📤 Sending transfer manifest (${config.totalChunks} chunks of ${config.chunkSize} bytes)`);
+    dataChannel.send(JSON.stringify({
+      type: 'transfer-manifest',
+      payload: manifest
+    }));
+  }, [addToast]);
+
+  /**
+   * Handle manifest acknowledgment and start sending chunks
+   */
+  const handleManifestAck = useCallback(async (
+    dataChannel: RTCDataChannel,
+    transferId: string,
+    ack: any
+  ) => {
+    const ctx = robustSendContextRef.current.get(transferId);
+    if (!ctx) {
+      console.warn(`⚠️ No send context for transfer ${transferId}`);
+      return;
+    }
+
+    console.log(`✅ Manifest acknowledged. Agreed chunk size: ${ack.agreedChunkSize}`);
+    
+    // Update chunk size if negotiated differently
+    if (ack.agreedChunkSize !== ctx.chunkSize) {
+      const newTotalChunks = Math.ceil(ctx.file.size / ack.agreedChunkSize);
+      ctx.chunkSize = ack.agreedChunkSize;
+      ctx.totalChunks = newTotalChunks;
+      ctx.manifest.chunkSize = ack.agreedChunkSize;
+      ctx.manifest.totalChunks = newTotalChunks;
+      console.log(`📏 Adjusted to ${newTotalChunks} chunks of ${ack.agreedChunkSize} bytes`);
+    }
+
+    // Start sending chunks
+    await sendChunksRobust(dataChannel, transferId);
+  }, []);
+
+  /**
+   * Send chunks with flow control, pacing, and retry logic
+   * Optimized for large file transfers (1GB+)
+   */
+  const sendChunksRobust = useCallback(async (
+    dataChannel: RTCDataChannel,
+    transferId: string
+  ) => {
+    const ctx = robustSendContextRef.current.get(transferId);
+    if (!ctx) return;
+
+    // Buffer thresholds (lowered for reliability with large files)
+    const BUFFER_HIGH_WATERMARK = 256 * 1024;  // 256KB - pause sending when buffer exceeds this
+    const BUFFER_LOW_WATERMARK = 16 * 1024;    // 16KB - resume sending when buffer drops below this
+    const MAX_CHUNK_RETRIES = 3;               // Retry failed chunks up to 3 times
+
+    // Track retry counts per chunk
+    const chunkRetryCount = new Map<number, number>();
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 5;
+
+    // Check if data channel is already closed
+    if (dataChannel.readyState !== 'open') {
+      console.log(`⚠️ Data channel not open (state: ${dataChannel.readyState}), cannot send chunks`);
+      setTransfers(prev => prev.map(t => 
+        t.id === transferId ? { ...t, status: 'failed' } : t
+      ));
+      robustSendContextRef.current.delete(transferId);
+      return;
+    }
+
+    ctx.isPaused = false;
+    console.log(`🚀 Starting chunk transfer (buffer limits: ${BUFFER_HIGH_WATERMARK / 1024}KB high, ${BUFFER_LOW_WATERMARK / 1024}KB low)...`);
+
+    // Helper function for adaptive delay based on buffer state
+    const getAdaptiveDelay = (): number => {
+      const buffered = dataChannel.bufferedAmount;
+      if (buffered > 128 * 1024) return 10;  // 10ms delay if buffer > 128KB
+      if (buffered > 64 * 1024) return 5;    // 5ms delay if buffer > 64KB
+      return 0;                               // No delay if buffer is low
+    };
+
+    // Helper function to delay execution
+    const delay = (ms: number): Promise<void> => {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    };
+
+    const sendSingleChunk = async (sequence: number): Promise<'sent' | 'channel_closed' | 'error' | 'retry_exhausted'> => {
+      // Always check channel state before sending
+      if (dataChannel.readyState !== 'open') {
+        console.log(`⚠️ Data channel closed during transfer (state: ${dataChannel.readyState})`);
+        return 'channel_closed';
+      }
+      
+      const chunk = await generateChunk(ctx.file, sequence, ctx.chunkSize);
+      const binaryChunk = createBinaryChunk(chunk, chunk.data);
+
+      try {
+        // Double-check state right before sending
+        if (dataChannel.readyState !== 'open') {
+          return 'channel_closed';
+        }
+        
+        dataChannel.send(binaryChunk);
+        ctx.sentChunks.add(sequence);
+        consecutiveErrors = 0; // Reset consecutive error count on success
+        
+        // Update progress (throttled)
+        const now = Date.now();
+        if (now - ctx.lastProgressUpdate > 100) {
+          ctx.lastProgressUpdate = now;
+          const progress = (ctx.sentChunks.size / ctx.totalChunks) * 100;
+          const elapsed = (now - ctx.startTime) / 1000;
+          const bytesTransferred = Math.min(ctx.sentChunks.size * ctx.chunkSize, ctx.file.size);
+          const speed = elapsed > 0 ? bytesTransferred / elapsed : 0;
+          const timeRemaining = speed > 0 ? (ctx.file.size - bytesTransferred) / speed : 0;
+
+          setTransfers(prev => prev.map(t => 
+            t.id === transferId ? { 
+              ...t, 
+              progress: Math.round(progress),
+              speed: Math.round(speed),
+              timeRemaining: Math.round(timeRemaining)
+            } : t
+          ));
+        }
+        
+        return 'sent';
+      } catch (error: any) {
+        // Check if this is a channel closed error
+        if (error?.name === 'InvalidStateError' || 
+            error?.message?.includes('not \'open\'') ||
+            dataChannel.readyState !== 'open') {
+          console.log(`⚠️ Data channel closed, stopping transfer`);
+          return 'channel_closed';
+        }
+        
+        // Track retry count for this chunk
+        const retries = (chunkRetryCount.get(sequence) || 0) + 1;
+        chunkRetryCount.set(sequence, retries);
+        consecutiveErrors++;
+        
+        if (retries >= MAX_CHUNK_RETRIES) {
+          console.error(`❌ Chunk ${sequence} failed after ${MAX_CHUNK_RETRIES} retries`);
+          return 'retry_exhausted';
+        }
+        
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          console.error(`❌ Too many consecutive errors (${consecutiveErrors}), aborting transfer`);
+          return 'retry_exhausted';
+        }
+        
+        console.warn(`⚠️ Error sending chunk ${sequence} (attempt ${retries}/${MAX_CHUNK_RETRIES}):`, error?.message || error);
+        
+        // Wait a bit before retry
+        await delay(100 * retries); // Exponential backoff: 100ms, 200ms, 300ms
+        
+        return 'error';
+      }
+    };
+
+    // Wait for buffer to drain (with channel state check)
+    const waitForBuffer = (): Promise<boolean> => {
+      return new Promise((resolve) => {
+        const check = () => {
+          // Check if channel is still open
+          if (dataChannel.readyState !== 'open') {
+            resolve(false);
+            return;
+          }
+          
+          if (dataChannel.bufferedAmount < BUFFER_LOW_WATERMARK) {
+            resolve(true);
+          } else {
+            setTimeout(check, 20); // Check more frequently
+          }
+        };
+        
+        if (dataChannel.bufferedAmountLowThreshold !== undefined) {
+          dataChannel.bufferedAmountLowThreshold = BUFFER_LOW_WATERMARK;
+          const originalHandler = dataChannel.onbufferedamountlow;
+          dataChannel.onbufferedamountlow = () => {
+            dataChannel.onbufferedamountlow = originalHandler;
+            resolve(dataChannel.readyState === 'open');
+          };
+        } else {
+          check();
+        }
+      });
+    };
+
+    // Helper to send a chunk with retry logic
+    const sendChunkWithRetry = async (seq: number): Promise<'sent' | 'channel_closed' | 'failed'> => {
+      let attempts = 0;
+      const maxAttempts = MAX_CHUNK_RETRIES;
+      
+      while (attempts < maxAttempts) {
+        const result = await sendSingleChunk(seq);
+        
+        if (result === 'sent') {
+          return 'sent';
+        }
+        
+        if (result === 'channel_closed' || result === 'retry_exhausted') {
+          return result === 'channel_closed' ? 'channel_closed' : 'failed';
+        }
+        
+        // Error - will retry
+        attempts++;
+        
+        // Wait for buffer to clear before retrying
+        if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > BUFFER_LOW_WATERMARK) {
+          console.log(`⏳ Waiting for buffer to drain before retry...`);
+          const canContinue = await waitForBuffer();
+          if (!canContinue) {
+            return 'channel_closed';
+          }
+        }
+      }
+      
+      return 'failed';
+    };
+
+    // Process resends first
+    while (ctx.pendingResends.length > 0 && !ctx.isPaused) {
+      // Check channel state before each resend
+      if (dataChannel.readyState !== 'open') {
+        console.log(`⚠️ Data channel closed during resend, aborting transfer`);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+        return;
+      }
+      
+      const seq = ctx.pendingResends.shift()!;
+      ctx.sentChunks.delete(seq); // Remove so we can resend
+      const result = await sendChunkWithRetry(seq);
+      
+      if (result === 'channel_closed' || result === 'failed') {
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+        return;
+      }
+      
+      // Flow control with lower threshold
+      if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > BUFFER_HIGH_WATERMARK) {
+        console.log(`⏸️ Buffer high (${Math.round(dataChannel.bufferedAmount / 1024)}KB), waiting...`);
+        const canContinue = await waitForBuffer();
+        if (!canContinue) {
+          setTransfers(prev => prev.map(t => 
+            t.id === transferId ? { ...t, status: 'failed' } : t
+          ));
+          robustSendContextRef.current.delete(transferId);
+          return;
+        }
+      }
+    }
+
+    // Send remaining chunks
+    for (let seq = 0; seq < ctx.totalChunks && !ctx.isPaused; seq++) {
+      // Check channel state before each chunk
+      if (dataChannel.readyState !== 'open') {
+        console.log(`⚠️ Data channel closed during chunk sending, aborting transfer`);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+        return;
+      }
+      
+      if (!ctx.sentChunks.has(seq)) {
+        const result = await sendChunkWithRetry(seq);
+        
+        if (result === 'channel_closed' || result === 'failed') {
+          setTransfers(prev => prev.map(t => 
+            t.id === transferId ? { ...t, status: 'failed' } : t
+          ));
+          robustSendContextRef.current.delete(transferId);
+          return;
+        }
+        
+        // Adaptive pacing - add delay based on buffer state
+        const adaptiveDelay = getAdaptiveDelay();
+        if (adaptiveDelay > 0) {
+          await delay(adaptiveDelay);
+        }
+        
+        // Flow control with lower threshold
+        if (dataChannel.readyState === 'open' && dataChannel.bufferedAmount > BUFFER_HIGH_WATERMARK) {
+          console.log(`⏸️ Buffer high (${Math.round(dataChannel.bufferedAmount / 1024)}KB), waiting...`);
+          const canContinue = await waitForBuffer();
+          if (!canContinue) {
+            setTransfers(prev => prev.map(t => 
+              t.id === transferId ? { ...t, status: 'failed' } : t
+            ));
+            robustSendContextRef.current.delete(transferId);
+            return;
+          }
+        }
+      }
+    }
+
+    // All chunks sent - verify channel is still open before sending end message
+    if (ctx.sentChunks.size === ctx.totalChunks && ctx.pendingResends.length === 0) {
+      if (dataChannel.readyState !== 'open') {
+        console.log(`⚠️ Data channel closed before sending transfer-end`);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+        return;
+      }
+      
+      console.log(`📤 All chunks sent, sending transfer-end`);
+      const duration = Date.now() - ctx.startTime;
+      
+      try {
+        dataChannel.send(JSON.stringify({
+          type: 'transfer-end',
+          payload: {
+            transferId,
+            fileHash: ctx.manifest.fileHash,
+            totalChunksSent: ctx.sentChunks.size,
+            totalBytesSent: ctx.file.size,
+            duration,
+            timestamp: Date.now()
+          }
+        }));
+      } catch (error) {
+        console.error(`❌ Error sending transfer-end:`, error);
+        setTransfers(prev => prev.map(t => 
+          t.id === transferId ? { ...t, status: 'failed' } : t
+        ));
+        robustSendContextRef.current.delete(transferId);
+      }
+    }
+  }, []);
+
+  /**
+   * Handle resend request from receiver
+   */
+  const handleResendRequest = useCallback(async (
+    dataChannel: RTCDataChannel,
+    transferId: string,
+    request: any
+  ) => {
+    const ctx = robustSendContextRef.current.get(transferId);
+    if (!ctx) return;
+
+    console.log(`🔄 Resend requested for sequences: ${request.sequences.join(', ')}`);
+    
+    // Add to pending resends
+    for (const seq of request.sequences) {
+      if (!ctx.pendingResends.includes(seq)) {
+        ctx.pendingResends.push(seq);
+        ctx.sentChunks.delete(seq); // Mark as not sent
+      }
+    }
+
+    // Resume sending if paused
+    if (!ctx.isPaused) {
+      await sendChunksRobust(dataChannel, transferId);
+    }
+  }, [sendChunksRobust]);
+
+  /**
+   * Handle transfer complete from receiver
+   */
+  const handleTransferComplete = useCallback((transferId: string, complete: any) => {
+    const ctx = robustSendContextRef.current.get(transferId);
+    if (!ctx) return;
+
+    if (complete.verified) {
+      console.log(`✅ [Robust] Transfer verified successfully!`);
+      setTransfers(prev => prev.map(t => 
+        t.id === transferId ? { ...t, status: 'completed', progress: 100 } : t
+      ));
+      logSystemEvent.transferCompleted(transferId, Date.now() - ctx.startTime, ctx.file.size, 0);
+    } else {
+      console.log(`⚠️ Transfer completed but hash verification failed`);
+      setTransfers(prev => prev.map(t => 
+        t.id === transferId ? { ...t, status: 'failed' } : t
+      ));
+    }
+
+    robustSendContextRef.current.delete(transferId);
+  }, []);
+
+  /**
+   * Handle transfer failed from receiver
+   */
+  const handleTransferFailed = useCallback((transferId: string, failed: any) => {
+    console.log(`❌ Transfer failed: ${failed.reason} - ${failed.message}`);
+    
+    setTransfers(prev => prev.map(t => 
+      t.id === transferId ? { ...t, status: 'failed' } : t
+    ));
+    
+    const ctx = robustSendContextRef.current.get(transferId);
+    if (ctx) {
+      logSystemEvent.transferFailed(transferId, failed.reason, Date.now() - ctx.startTime);
+    }
+    
+    robustSendContextRef.current.delete(transferId);
+  }, []);
+
+  // ============================================================================
+  // Robust Chunking - Receiver Functions
+  // ============================================================================
+
+  /**
+   * Handle transfer manifest (receiver side)
+   */
+  const handleTransferManifest = useCallback((
+    dataChannel: RTCDataChannel,
+    from: string,
+    manifest: any
+  ) => {
+    console.log(`📥 [Robust] Received transfer manifest for ${manifest.fileName}`);
+    console.log(`   File size: ${manifest.fileSize} bytes`);
+    console.log(`   Total chunks: ${manifest.totalChunks}`);
+    console.log(`   File hash: ${hashSummary(manifest.fileHash)}`);
+
+    const config = calculateChunkConfig(manifest.fileSize, detectDeviceType());
+    const agreedChunkSize = negotiateChunkSize(manifest.chunkSize, config.chunkSize);
+    const totalChunks = Math.ceil(manifest.fileSize / agreedChunkSize);
+
+    // Update manifest with negotiated values
+    const negotiatedManifest = {
+      ...manifest,
+      chunkSize: agreedChunkSize,
+      totalChunks
+    };
+
+    // Show modal notification for large files
+    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+    if (manifest.fileSize >= LARGE_FILE_THRESHOLD && onLargeFileTransfer) {
+      onLargeFileTransfer(manifest.fileSize, manifest.fileName);
+    }
+
+    // Store receive context
+    receivedFilesRef.current.set(from, {
+      name: manifest.fileName,
+      size: manifest.fileSize,
+      type: manifest.fileType,
+      chunks: [],
+      startTime: Date.now(),
+      useRobustChunking: true,
+      manifest: negotiatedManifest,
+      bitmap: createChunkBitmap(totalChunks),
+      receivedChunks: new Map(),
+      useIndexedDB: config.useIndexedDB,
+      lastAckSeq: -1,
+      ackBatchSize: config.ackBatchSize
+    });
+
+    // Send acknowledgment
+    const ack = createManifestAck(negotiatedManifest);
+    dataChannel.send(JSON.stringify({
+      type: 'manifest-ack',
+      payload: ack
+    }));
+
+    console.log(`✅ Manifest acknowledged. Ready to receive ${totalChunks} chunks`);
+  }, [addToast]);
+
+  /**
+   * Handle binary chunk (receiver side)
+   */
+  const handleBinaryChunk = useCallback(async (
+    dataChannel: RTCDataChannel,
+    from: string,
+    data: ArrayBuffer
+  ) => {
+    const ctx = receivedFilesRef.current.get(from);
+    if (!ctx || !ctx.useRobustChunking || !ctx.bitmap || !ctx.manifest || !ctx.receivedChunks) {
+      return false;
+    }
+
+    // Parse and verify chunk
+    const { valid, header, data: chunkData, computedHash } = await verifyBinaryChunk(data);
+
+    if (!valid) {
+      console.log(`❌ Chunk ${header.sequence} hash mismatch! Requesting resend...`);
+      dataChannel.send(JSON.stringify({
+        type: 'request-resend',
+        payload: {
+          transferId: ctx.manifest.transferId,
+          sequences: [header.sequence],
+          reason: 'hash_mismatch',
+          timestamp: Date.now()
+        }
+      }));
+      return true;
+    }
+
+    // Store chunk
+    if (ctx.useIndexedDB) {
+      await storeChunkToDB(ctx.manifest.transferId, header.sequence, chunkData, computedHash);
+    } else {
+      ctx.receivedChunks.set(header.sequence, chunkData);
+    }
+
+    // Update bitmap
+    markChunkReceived(ctx.bitmap, header.sequence);
+
+    // Check for gaps periodically and send ACK
+    const shouldAck = (header.sequence - (ctx.lastAckSeq || -1)) >= (ctx.ackBatchSize || 10);
+    
+    if (shouldAck) {
+      const gaps = detectGaps(ctx.bitmap, header.sequence);
+      
+      if (gaps.length > 0) {
+        console.log(`🔍 Gaps detected: ${gaps.slice(0, 10).join(', ')}${gaps.length > 10 ? '...' : ''}`);
+        dataChannel.send(JSON.stringify({
+          type: 'request-resend',
+          payload: {
+            transferId: ctx.manifest.transferId,
+            sequences: gaps,
+            reason: 'gap',
+            timestamp: Date.now()
+          }
+        }));
+      }
+
+      // Send ACK
+      dataChannel.send(JSON.stringify({
+        type: 'chunk-ack',
+        payload: {
+          transferId: ctx.manifest.transferId,
+          lastContiguousSeq: ctx.bitmap.lastContiguous,
+          receivedSequences: Array.from(ctx.bitmap.received).slice(-10),
+          gaps,
+          totalReceived: ctx.bitmap.received.size,
+          timestamp: Date.now()
+        }
+      }));
+      ctx.lastAckSeq = header.sequence;
+    }
+
+    // Update progress (throttled)
+    const now = Date.now();
+    const elapsed = (now - ctx.startTime) / 1000;
+    const bytesReceived = Math.min(ctx.bitmap.received.size * ctx.manifest.chunkSize, ctx.manifest.fileSize);
+    const progress = (ctx.bitmap.received.size / ctx.bitmap.totalChunks) * 100;
+    const speed = elapsed > 0 ? bytesReceived / elapsed : 0;
+    const timeRemaining = speed > 0 ? (ctx.manifest.fileSize - bytesReceived) / speed : 0;
+
+    setTransfers(prev => prev.map(t => 
+      t.peer.id === from && t.status === 'transferring' ? { 
+        ...t, 
+        progress: Math.round(progress),
+        speed: Math.round(speed),
+        timeRemaining: Math.round(timeRemaining)
+      } : t
+    ));
+
+    return true;
+  }, []);
+
+  /**
+   * Handle transfer end (receiver side)
+   */
+  const handleTransferEndRobust = useCallback(async (
+    dataChannel: RTCDataChannel,
+    from: string,
+    end: any
+  ) => {
+    const ctx = receivedFilesRef.current.get(from);
+    if (!ctx || !ctx.useRobustChunking || !ctx.bitmap || !ctx.manifest || !ctx.receivedChunks) {
+      return false;
+    }
+
+    console.log(`📥 [Robust] Transfer end received. Verifying...`);
+
+    // Check for any remaining gaps
+    const gaps = detectGaps(ctx.bitmap);
+    if (gaps.length > 0) {
+      console.log(`⚠️ ${gaps.length} chunks missing. Requesting resend...`);
+      dataChannel.send(JSON.stringify({
+        type: 'request-resend',
+        payload: {
+          transferId: ctx.manifest.transferId,
+          sequences: gaps,
+          reason: 'gap',
+          timestamp: Date.now()
+        }
+      }));
+      return true;
+    }
+
+    // All chunks received, verify file hash
+    console.log(`🔐 Verifying file integrity...`);
+    
+    let file: File;
+    try {
+      file = assembleChunksToFile(ctx.receivedChunks, ctx.manifest);
+    } catch (error) {
+      console.error(`❌ Failed to assemble file:`, error);
+      dataChannel.send(JSON.stringify({
+        type: 'transfer-failed',
+        payload: {
+          transferId: ctx.manifest.transferId,
+          reason: 'storage_error',
+          message: `Failed to assemble file: ${error}`,
+          timestamp: Date.now()
+        }
+      }));
+      return true;
+    }
+
+    // Verify hash
+    const hashResult = await hashFile(file);
+    const verified = hashResult.hex === end.fileHash.toLowerCase();
+
+    const duration = Date.now() - ctx.startTime;
+
+    if (verified) {
+      console.log(`✅ File hash verified: ${hashSummary(hashResult.hex)}`);
+      
+      // Success!
+      const blob = new Blob([file], { type: ctx.manifest.fileType });
+      const url = URL.createObjectURL(blob);
+      
+      setCompletedReceived(prev => [
+        ...prev,
+        {
+          id: `completed-${Date.now()}-${Math.random()}`,
+          file,
+          url,
+          peer: { 
+            id: from, 
+            name: getPeerName(from), 
+            emoji: '📱', 
+            color: '#F6C148' 
+          }
+        }
+      ]);
+      
+      setTransfers(prev => prev.map(t => 
+        t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
+      ));
+      
+      logSystemEvent.fileReceived(ctx.manifest.fileType, ctx.manifest.fileSize);
+      playSuccessSound();
+      
+      if (addToast) {
+        addToast('success', `File received: ${ctx.manifest.fileName} from ${getPeerName(from)}`);
+      }
+      
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('File Received', {
+          body: `Successfully received ${ctx.manifest.fileName} from ${getPeerName(from)}`,
+          icon: '/favicon.ico'
+        });
+      }
+    } else {
+      console.log(`❌ Hash mismatch! Expected: ${hashSummary(end.fileHash)}, Got: ${hashSummary(hashResult.hex)}`);
+      addToast?.('error', 'File transfer failed: integrity check failed');
+    }
+
+    // Send completion message
+    dataChannel.send(JSON.stringify({
+      type: 'transfer-complete',
+      payload: {
+        transferId: ctx.manifest.transferId,
+        verified,
+        calculatedHash: hashResult.hex,
+        totalChunksReceived: ctx.bitmap.received.size,
+        duration,
+        timestamp: Date.now()
+      }
+    }));
+
+    // Cleanup
+    receivedFilesRef.current.delete(from);
+    
+    return true;
+  }, [getPeerName, addToast]);
+
+  // ============================================================================
+  // Main Send File Function
+  // ============================================================================
+
   const sendFile = useCallback(async (file: File, peer: Peer) => {
     console.log(`📤 Sending file ${file.name} to ${peer.name}`);
     
@@ -180,7 +968,8 @@ export const useWebRTC = (
       peerName: peer.name,
       fileName: file.name,
       fileSize: file.size,
-      fileType: file.type
+      fileType: file.type,
+      useRobustChunking: USE_ROBUST_CHUNKING
     });
     
     // Add to transfers list
@@ -215,7 +1004,6 @@ export const useWebRTC = (
 
     try {
       // Always create a new connection for each transfer for reliability
-      // This ensures clean state and avoids connection reuse issues
       console.log(`🆕 Creating new WebRTC connection for transfer to ${peer.id}`);
       logSystemEvent.systemProcessStep(processName, 'creating_peer_connection', {
         transferId,
@@ -236,7 +1024,6 @@ export const useWebRTC = (
       
       // Create new connection
       const pc = createPeerConnection(peer.id);
-      const isNewConnection = true;
       
       // Create data channel
       logSystemEvent.systemProcessStep(processName, 'creating_data_channel', {
@@ -247,6 +1034,10 @@ export const useWebRTC = (
       const dataChannel = pc.createDataChannel('file-transfer', {
         ordered: true
       });
+      
+      // Set binary type for robust chunking
+      dataChannel.binaryType = 'arraybuffer';
+      
       dataChannel.onopen = () => {
         console.log('📤 Data channel opened for sending');
         
@@ -268,15 +1059,47 @@ export const useWebRTC = (
           fileName: file.name,
           fileSize: file.size,
           fileType: file.type,
-          transferId: transferId
+          transferId: transferId,
+          useRobustChunking: USE_ROBUST_CHUNKING
         }));
+        
         // Store pending file for when receiver accepts
         pendingFilesRef.current.set(transferId, { file, peer, transferId });
       };
-      dataChannel.onmessage = (event) => {
+      
+      dataChannel.onmessage = async (event) => {
         if (typeof event.data === 'string') {
           try {
             const message = JSON.parse(event.data);
+            
+            // Handle robust chunking protocol messages
+            if (message.type === 'manifest-ack' && message.payload?.transferId === transferId) {
+              await handleManifestAck(dataChannel, transferId, message.payload);
+              return;
+            }
+            
+            if (message.type === 'request-resend' && message.payload?.transferId === transferId) {
+              await handleResendRequest(dataChannel, transferId, message.payload);
+              return;
+            }
+            
+            if (message.type === 'transfer-complete' && message.payload?.transferId === transferId) {
+              handleTransferComplete(transferId, message.payload);
+              return;
+            }
+            
+            if (message.type === 'transfer-failed' && message.payload?.transferId === transferId) {
+              handleTransferFailed(transferId, message.payload);
+              return;
+            }
+            
+            if (message.type === 'chunk-ack') {
+              // Just log for now
+              console.log(`📬 Chunk ACK: ${message.payload?.totalReceived || '?'} received`);
+              return;
+            }
+            
+            // Legacy protocol handlers
             if (message.type === 'file-accepted' && message.transferId === transferId) {
               console.log('📤 File accepted, starting transfer');
               
@@ -288,8 +1111,13 @@ export const useWebRTC = (
               setTransfers(prev => prev.map(t => 
                 t.id === transferId ? { ...t, status: 'transferring' } : t
               ));
-              // Start file transfer
-              sendFileInChunks(dataChannel, file, transferId);
+              
+              // Start file transfer using robust chunking
+              if (USE_ROBUST_CHUNKING) {
+                await sendFileRobust(dataChannel, file, transferId, peer);
+              } else {
+                sendFileInChunksLegacy(dataChannel, file, transferId);
+              }
             } else if (message.type === 'file-rejected' && message.transferId === transferId) {
               console.log('📤 File rejected');
               
@@ -308,6 +1136,7 @@ export const useWebRTC = (
           }
         }
       };
+      
       dataChannel.onerror = (error) => {
         console.error('❌ Data channel error:', error);
         
@@ -321,6 +1150,7 @@ export const useWebRTC = (
           t.id === transferId ? { ...t, status: 'failed' } : t
         ));
       };
+      
       dataChannel.onclose = () => {
         console.log('📤 Data channel closed');
         
@@ -329,17 +1159,14 @@ export const useWebRTC = (
           peerId: peer.id
         });
         
-        // Remove from data channels ref (but keep connection for other channels)
-        // Don't delete by peer.id as there might be multiple channels
-        // Instead, track channels by transferId or use a different key
         console.log('ℹ️ Data channel closed - WebRTC connection may still be usable for future transfers');
       };
       
-      // Store data channel with a unique key (peer.id + transferId) to allow multiple channels
+      // Store data channel
       const channelKey = `${peer.id}-${transferId}`;
       dataChannelsRef.current.set(channelKey, dataChannel);
       
-      // Always create offer for new connection
+      // Create offer
       console.log(`📤 Creating offer for ${peer.id}`);
       
       logSystemEvent.systemProcessStep(processName, 'creating_offer', {
@@ -374,9 +1201,11 @@ export const useWebRTC = (
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
     }
-  }, [connections, createPeerConnection, onSignal, userId, storePendingRequest, isConnected, transfers, addToast]);
+  }, [connections, createPeerConnection, onSignal, userId, storePendingRequest, isConnected, transfers, addToast, sendFileRobust, handleManifestAck, handleResendRequest, handleTransferComplete, handleTransferFailed]);
 
-  const sendFileInChunks = (dataChannel: RTCDataChannel, file: File, transferId: string) => {
+  // Legacy chunk sending (fallback)
+  const sendFileInChunksLegacy = (dataChannel: RTCDataChannel, file: File, transferId: string) => {
+    const CHUNK_SIZE = 16384; // 16KB legacy chunks
     const reader = new FileReader();
     let offset = 0;
     const startTime = Date.now();
@@ -407,7 +1236,7 @@ export const useWebRTC = (
         // Update progress
         const progress = (offset / file.size) * 100;
         const elapsed = Date.now() - startTime;
-        const speed = offset / (elapsed / 1000); // bytes per second
+        const speed = offset / (elapsed / 1000);
         const timeRemaining = speed > 0 ? (file.size - offset) / speed : 0;
 
         setTransfers(prev => prev.map(t => 
@@ -428,13 +1257,8 @@ export const useWebRTC = (
             t.id === transferId ? { ...t, status: 'completed', progress: 100 } : t
           ));
           
-          // Track successful file transfer
           logSystemEvent.transferCompleted(transferId, Date.now() - startTime, file.size, 0);
-          
-          // Don't close data channel immediately - keep it open for potential future transfers
-          // Only close if explicitly needed (e.g., user cancels or connection fails)
-          // This allows multiple file transfers without re-establishing WebRTC connection
-          console.log('✅ File transfer completed - keeping data channel open for future transfers');
+          console.log('✅ File transfer completed');
         }
       }
     };
@@ -444,7 +1268,7 @@ export const useWebRTC = (
       setTransfers(prev => prev.map(t => 
         t.id === transferId ? { ...t, status: 'failed' } : t
       ));
-              logSystemEvent.transferFailed(transferId, 'transfer_failed', Date.now() - startTime);
+      logSystemEvent.transferFailed(transferId, 'transfer_failed', Date.now() - startTime);
     };
 
     readSlice();
@@ -468,29 +1292,69 @@ export const useWebRTC = (
         pc = createPeerConnection(from);
       }
       
-      // Set up data channel handler (if not already set up)
-      // This handler will receive data channels created by the other peer
-      // We need to set this up even if connection exists, to handle bidirectional transfers
+      // Set up data channel handler
       if (!pc.ondatachannel) {
         pc.ondatachannel = (event) => {
           const dataChannel = event.channel;
           console.log('📥 Data channel opened for receiving');
           
-          // Store the data channel for accept/reject operations
-          // Use peer.id as key for backward compatibility with accept/reject functions
+          // Set binary type for robust chunking
+          dataChannel.binaryType = 'arraybuffer';
+          
+          // Store the data channel
           dataChannelsRef.current.set(from, dataChannel);
           
-          dataChannel.onmessage = (event) => {
+          dataChannel.onmessage = async (event) => {
+            // Handle binary chunk (robust chunking)
+            if (event.data instanceof ArrayBuffer) {
+              const handled = await handleBinaryChunk(dataChannel, from, event.data);
+              if (handled) return;
+              
+              // Fallback: legacy binary handling
+              const receivedFile = receivedFilesRef.current.get(from);
+              if (receivedFile && !receivedFile.useRobustChunking) {
+                receivedFile.chunks.push(event.data);
+                
+                const totalReceived = receivedFile.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+                const progress = (totalReceived / receivedFile.size) * 100;
+                const elapsed = Date.now() - receivedFile.startTime;
+                const speed = elapsed > 0 ? totalReceived / (elapsed / 1000) : 0;
+                const timeRemaining = speed > 0 ? (receivedFile.size - totalReceived) / speed : 0;
+                
+                setTransfers(prev => prev.map(t => 
+                  t.peer.id === from && t.status === 'transferring' ? { 
+                    ...t, 
+                    progress: Math.round(progress),
+                    speed: Math.round(speed),
+                    timeRemaining: Math.round(timeRemaining)
+                  } : t
+                ));
+              }
+              return;
+            }
+            
+            // Handle string messages
             if (typeof event.data === 'string') {
               try {
                 const message = JSON.parse(event.data);
+                
+                // Robust chunking protocol messages
+                if (message.type === 'transfer-manifest') {
+                  handleTransferManifest(dataChannel, from, message.payload);
+                  return;
+                }
+                
+                if (message.type === 'transfer-end') {
+                  const handled = await handleTransferEndRobust(dataChannel, from, message.payload);
+                  if (handled) return;
+                }
+                
+                // Legacy protocol messages
                 if (message.type === 'file-request') {
                   console.log('📥 Incoming file request:', message);
                   
-                  // Log incoming file event (triggers auto-upload)
                   logSystemEvent.fileReceived(message.fileType, message.fileSize);
                   
-                  // Add to incoming files list
                   const incomingFileId = `incoming-${Date.now()}-${Math.random()}`;
                   setIncomingFiles(prev => [...prev, {
                     id: incomingFileId,
@@ -502,15 +1366,12 @@ export const useWebRTC = (
                     transferId: message.transferId
                   }]);
                   
-                  // Play chime sound
                   playChime();
                   
-                  // Show toast notification
                   if (addToast) {
                     addToast('info', `Incoming file: ${message.fileName} from ${getPeerName(from)}`);
                   }
                   
-                  // Show browser notification if available
                   if ('Notification' in window && Notification.permission === 'granted') {
                     new Notification('Incoming File', {
                       body: `${message.fileName} (${formatFileSize(message.fileSize)}) from ${getPeerName(from)}`,
@@ -525,9 +1386,10 @@ export const useWebRTC = (
                     size: message.size,
                     type: message.fileType,
                     chunks: [],
-                    startTime: Date.now()
+                    startTime: Date.now(),
+                    useRobustChunking: false
                   });
-                  // Only add transfer if not already present for this peer and file
+                  
                   setTransfers(prev => {
                     const alreadyExists = prev.some(t =>
                       t.peer.id === from &&
@@ -536,20 +1398,18 @@ export const useWebRTC = (
                       t.status !== 'completed'
                     );
                     if (alreadyExists) {
-                      // Update status to 'transferring' if needed
                       return prev.map(t =>
                         t.peer.id === from && t.file.name === message.name && t.file.type === message.fileType && t.status !== 'completed'
                           ? { ...t, status: 'transferring' }
                           : t
                       );
                     } else {
-                      // Add new transfer if not present
-                  const transferId = `receive-${Date.now()}-${Math.random()}`;
+                      const transferId = `receive-${Date.now()}-${Math.random()}`;
                       return [
                         ...prev,
                         {
-                    id: transferId,
-                    file: new File([new ArrayBuffer(message.size)], message.name, { type: message.fileType }),
+                          id: transferId,
+                          file: new File([new ArrayBuffer(message.size)], message.name, { type: message.fileType }),
                           peer: { 
                             id: from, 
                             name: getPeerName(from), 
@@ -557,7 +1417,7 @@ export const useWebRTC = (
                             color: '#F6C148', 
                             isOnline: true 
                           },
-                    status: 'transferring',
+                          status: 'transferring',
                           progress: 0,
                           speed: 0,
                           timeRemaining: 0
@@ -567,12 +1427,11 @@ export const useWebRTC = (
                   });
                 } else if (message.type === 'file-end') {
                   const receivedFile = receivedFilesRef.current.get(from);
-                  if (receivedFile) {
+                  if (receivedFile && !receivedFile.useRobustChunking) {
                     console.log('📥 File received, reconstructing...');
-                    // Reconstruct file
                     const blob = new Blob(receivedFile.chunks, { type: receivedFile.type });
                     const url = URL.createObjectURL(blob);
-                    // Store for transfer complete modal
+                    
                     setCompletedReceived(prev => [
                       ...prev,
                       {
@@ -588,18 +1447,14 @@ export const useWebRTC = (
                       }
                     ]);
                     receivedFilesRef.current.delete(from);
-                    // Update transfer status
+                    
                     setTransfers(prev => prev.map(t => 
                       t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
                     ));
                     
-                    // Track file received
                     logSystemEvent.fileReceived(receivedFile.type, receivedFile.size);
-                    
-                    // Play success sound
                     playSuccessSound();
                     
-                    // Show success notification
                     if (addToast) {
                       addToast('success', `File received: ${receivedFile.name} from ${getPeerName(from)}`);
                     }
@@ -615,28 +1470,6 @@ export const useWebRTC = (
               } catch (error) {
                 console.error('❌ Error parsing message:', error);
               }
-            } else {
-              // Binary data (file chunk)
-              const receivedFile = receivedFilesRef.current.get(from);
-              if (receivedFile) {
-                receivedFile.chunks.push(event.data);
-                
-                // Calculate progress, speed, and ETA
-                const totalReceived = receivedFile.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
-                const progress = (totalReceived / receivedFile.size) * 100;
-                const elapsed = Date.now() - receivedFile.startTime;
-                const speed = elapsed > 0 ? totalReceived / (elapsed / 1000) : 0; // bytes per second
-                const timeRemaining = speed > 0 ? (receivedFile.size - totalReceived) / speed : 0;
-                
-                setTransfers(prev => prev.map(t => 
-                  t.peer.id === from && t.status === 'transferring' ? { 
-                    ...t, 
-                    progress: Math.round(progress),
-                    speed: Math.round(speed),
-                    timeRemaining: Math.round(timeRemaining)
-                  } : t
-                ));
-              }
             }
           };
           
@@ -646,9 +1479,7 @@ export const useWebRTC = (
           
           dataChannel.onclose = () => {
             console.log('📥 Data channel closed');
-            // Remove from data channels ref
             dataChannelsRef.current.delete(from);
-            // Don't remove WebRTC connection - it might be reused for future transfers
             console.log('ℹ️ Data channel closed - WebRTC connection may still be usable for future transfers');
           };
         };
@@ -671,7 +1502,7 @@ export const useWebRTC = (
         await pc.addIceCandidate(data.candidate);
       }
     }
-  }, [connections, createPeerConnection, onSignal, userId, addToast, peers, isConnected, storePendingSignal]);
+  }, [connections, createPeerConnection, onSignal, userId, addToast, peers, isConnected, storePendingSignal, handleBinaryChunk, handleTransferManifest, handleTransferEndRobust, getPeerName]);
 
   const cancelTransfer = useCallback((transferId: string) => {
     setTransfers(prev => prev.map(t => 
@@ -686,6 +1517,9 @@ export const useWebRTC = (
         dataChannel.close();
       }
     }
+    
+    // Clean up robust chunking context
+    robustSendContextRef.current.delete(transferId);
   }, [transfers]);
 
   const acceptIncomingFile = useCallback((incomingFileId: string) => {
@@ -697,7 +1531,6 @@ export const useWebRTC = (
     
     console.log('✅ Accepting incoming file:', incomingFile);
     
-    // Find the data channel for this sender
     const dataChannel = dataChannelsRef.current.get(incomingFile.from);
     if (!dataChannel) {
       console.error('❌ Data channel not found for sender:', incomingFile.from);
@@ -705,16 +1538,13 @@ export const useWebRTC = (
     }
     
     if (dataChannel.readyState === 'open') {
-      // Send acceptance message with the sender's transferId
       dataChannel.send(JSON.stringify({
         type: 'file-accepted',
         transferId: incomingFile.transferId
       }));
       
-      // Remove from incoming files
       setIncomingFiles(prev => prev.filter(f => f.id !== incomingFileId));
       
-      // Add to transfers list
       const transferId = `receive-${Date.now()}-${Math.random()}`;
       setTransfers(prev => [...prev, {
         id: transferId,
@@ -732,7 +1562,7 @@ export const useWebRTC = (
         timeRemaining: 0
       }]);
       
-      // Set up file receiving
+      // Initialize receiving state (will be updated when manifest or file-start is received)
       receivedFilesRef.current.set(incomingFile.from, {
         name: incomingFile.fileName,
         size: incomingFile.fileSize,
@@ -756,10 +1586,8 @@ export const useWebRTC = (
     
     console.log('❌ Rejecting incoming file:', incomingFile);
     
-    // Find the data channel for this sender
     const dataChannel = dataChannelsRef.current.get(incomingFile.from);
     if (dataChannel && dataChannel.readyState === 'open' && incomingFile) {
-      // Send rejection message with the sender's transferId
       dataChannel.send(JSON.stringify({
         type: 'file-rejected',
         transferId: incomingFile.transferId
@@ -769,7 +1597,6 @@ export const useWebRTC = (
       console.error('❌ Data channel not available for rejection');
     }
     
-    // Remove from incoming files
     setIncomingFiles(prev => prev.filter(f => f.id !== incomingFileId));
   }, [incomingFiles]);
 
