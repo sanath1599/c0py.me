@@ -44,7 +44,8 @@ export const useWebRTC = (
   userId: string,
   addToast?: (type: 'success' | 'error' | 'info', message: string) => void,
   peers?: Array<{ id: string; name: string; emoji: string; color: string }>,
-  isConnected?: boolean
+  isConnected?: boolean,
+  onLargeFileTransfer?: (fileSize: number, fileName?: string) => void
 ) => {
   // Helper function to get peer name
   const getPeerName = useCallback((peerId: string) => {
@@ -233,6 +234,12 @@ export const useWebRTC = (
 
     const config = calculateChunkConfig(file.size, detectDeviceType());
 
+    // Show modal notification for large files
+    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+    if (file.size >= LARGE_FILE_THRESHOLD && onLargeFileTransfer) {
+      onLargeFileTransfer(file.size, file.name);
+    }
+
     // Store send context
     robustSendContextRef.current.set(transferId, {
       file,
@@ -253,7 +260,7 @@ export const useWebRTC = (
       type: 'transfer-manifest',
       payload: manifest
     }));
-  }, []);
+  }, [addToast]);
 
   /**
    * Handle manifest acknowledgment and start sending chunks
@@ -682,6 +689,12 @@ export const useWebRTC = (
       totalChunks
     };
 
+    // Show modal notification for large files
+    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+    if (manifest.fileSize >= LARGE_FILE_THRESHOLD && onLargeFileTransfer) {
+      onLargeFileTransfer(manifest.fileSize, manifest.fileName);
+    }
+
     // Store receive context
     receivedFilesRef.current.set(from, {
       name: manifest.fileName,
@@ -706,7 +719,7 @@ export const useWebRTC = (
     }));
 
     console.log(`✅ Manifest acknowledged. Ready to receive ${totalChunks} chunks`);
-  }, []);
+  }, [addToast]);
 
   /**
    * Handle binary chunk (receiver side)

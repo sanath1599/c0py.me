@@ -28,7 +28,7 @@ export const useSocket = () => {
     maxRetries: 5,
     retryDelay: 3000,
     healthCheckInterval: 10000,
-    serverHealthUrl: '/api/health',
+    serverHealthUrl: 'https://backend.c0py.me/api/health',
     enableFallback: true,
   });
 
@@ -346,7 +346,6 @@ export const useSocket = () => {
     // Check if we've already joined this room in this connection
     const roomKey = `${room}-${userId}`;
     if (joinedRoomsRef.current.has(roomKey)) {
-      console.log('🔄 Already joined room:', room);
       return;
     }
 

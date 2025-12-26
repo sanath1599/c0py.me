@@ -20,6 +20,7 @@ import { logUserAction, logSystemEvent } from '../utils/eventLogger';
 import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
 import { NetworkErrorModal } from '../components/NetworkErrorModal';
+import { LargeFileModal } from '../components/LargeFileModal';
 import Confetti from 'react-confetti';
 
 const WORLD_OPTIONS = [
@@ -78,7 +79,13 @@ export const AppPage: React.FC = () => {
     resetRetry,
     cancelRetry
   } = useSocket();
-  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id, addToast, peers, isConnected);
+  // Handler for large file transfer notification
+  const handleLargeFileTransfer = (fileSize: number, fileName?: string) => {
+    setLargeFileInfo({ size: fileSize, fileName });
+    setShowLargeFileModal(true);
+  };
+
+  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id, addToast, peers, isConnected, handleLargeFileTransfer);
 
   // Set up signal handling once
   useEffect(() => {
@@ -102,6 +109,8 @@ export const AppPage: React.FC = () => {
   const [pendingWorld, setPendingWorld] = useState<WorldType | null>(null);
   const [showDemo, setShowDemo] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showLargeFileModal, setShowLargeFileModal] = useState(false);
+  const [largeFileInfo, setLargeFileInfo] = useState<{ size: number; fileName?: string } | null>(null);
 
   // Join rooms when connection is established
   useEffect(() => {
@@ -862,6 +871,17 @@ const filteredPeers = React.useMemo(() => {
       
       {/* Demo Modal */}
       <DemoModal isOpen={showDemo} onClose={() => setShowDemo(false)} />
+      
+      <LargeFileModal
+        isOpen={showLargeFileModal}
+        fileSize={largeFileInfo?.size || 0}
+        fileName={largeFileInfo?.fileName}
+        onClose={() => {
+          setShowLargeFileModal(false);
+          setLargeFileInfo(null);
+        }}
+        autoCloseDelay={8000}
+      />
     </div>
   );
 };
