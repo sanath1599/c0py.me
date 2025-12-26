@@ -20,6 +20,7 @@ import { logUserAction, logSystemEvent } from '../utils/eventLogger';
 import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
 import { NetworkErrorModal } from '../components/NetworkErrorModal';
+import { LargeFileTransferModal } from '../components/LargeFileTransferModal';
 import Confetti from 'react-confetti';
 
 const WORLD_OPTIONS = [
@@ -93,6 +94,8 @@ export const AppPage: React.FC = () => {
   const [activeTransfer, setActiveTransfer] = useState<null | typeof completedReceived[0]>(null);
   const prevCompletedCount = useRef(0);
   const [shownTransferToasts, setShownTransferToasts] = useState<Set<string>>(new Set());
+  const [showLargeFileModal, setShowLargeFileModal] = useState(false);
+  const [largeFileInfo, setLargeFileInfo] = useState<{ fileName: string; fileSize: number } | null>(null);
   const [transferTimes, setTransferTimes] = useState<Record<string, { start: number; end?: number; duration?: number }>>({});
 
   const [selectedWorld, setSelectedWorld] = useState<WorldType | null>(null);
@@ -130,6 +133,23 @@ export const AppPage: React.FC = () => {
     const processName = 'file_transfer';
     const totalSize = files.reduce((sum, file) => sum + file.size, 0);
     const fileTypes = [...new Set(files.map(file => file.type))];
+    
+    // Check for large files (> 100MB)
+    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+    const largeFiles = files.filter(file => file.size > LARGE_FILE_THRESHOLD);
+    
+    // Show large file modal if any large files are being sent (informational only)
+    if (largeFiles.length > 0) {
+      const largestFile = largeFiles.reduce((prev, current) => 
+        (prev.size > current.size) ? prev : current
+      );
+      setLargeFileInfo({
+        fileName: largestFile.name,
+        fileSize: largestFile.size
+      });
+      setShowLargeFileModal(true);
+      // Modal will auto-close via countdown in the component
+    }
     
     try {
       // Start file transfer process
@@ -179,6 +199,12 @@ export const AppPage: React.FC = () => {
         totalSize
       });
     }
+  };
+  
+  // Handle large file modal close (informational only)
+  const handleLargeFileModalClose = () => {
+    setShowLargeFileModal(false);
+    setLargeFileInfo(null);
   };
 
   const handleCancelTransfer = (transferId: string) => {
@@ -841,13 +867,32 @@ const filteredPeers = React.useMemo(() => {
               <div className="font-medium text-lg" style={{ color: '#A6521B' }}>{activeTransfer.file.name}</div>
               <div className="text-xs text-gray-500">{activeTransfer.file.type} • {formatFileSize(activeTransfer.file.size)}</div>
             </div>
-            <a
-              href={activeTransfer.url}
-              download={activeTransfer.file.name}
+            <button
+              onClick={() => {
+                try {
+                  // Create download link programmatically for better reliability
+                  const link = document.createElement('a');
+                  link.href = activeTransfer.url;
+                  link.download = activeTransfer.file.name;
+                  link.style.display = 'none';
+                  document.body.appendChild(link);
+                  link.click();
+                  
+                  // Clean up after a delay to ensure download starts
+                  setTimeout(() => {
+                    document.body.removeChild(link);
+                    // Don't revoke URL immediately - let browser handle it
+                    // URL.revokeObjectURL(activeTransfer.url);
+                  }, 100);
+                } catch (error) {
+                  console.error('Download failed:', error);
+                  alert(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+              }}
               className="mt-4 w-full py-2 px-4 rounded-lg bg-orange-400 text-white font-semibold text-center hover:bg-orange-500 transition"
             >
               Download
-            </a>
+            </button>
           </div>
         </div>
       )}
@@ -857,6 +902,16 @@ const filteredPeers = React.useMemo(() => {
       
       {/* Demo Modal */}
       <DemoModal isOpen={showDemo} onClose={() => setShowDemo(false)} />
+      
+      {/* Large File Transfer Modal */}
+      {largeFileInfo && (
+        <LargeFileTransferModal
+          isOpen={showLargeFileModal}
+          fileName={largeFileInfo.fileName}
+          fileSize={largeFileInfo.fileSize}
+          onClose={handleLargeFileModalClose}
+        />
+      )}
     </div>
   );
 };

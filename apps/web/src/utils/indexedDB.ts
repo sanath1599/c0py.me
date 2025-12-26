@@ -268,16 +268,49 @@ export const reconstructFileFromIDB = async (transferId: string): Promise<Blob> 
     request.onsuccess = () => {
       const chunks = request.result;
       
+      if (chunks.length === 0) {
+        reject(new Error('No chunks found in IndexedDB'));
+        return;
+      }
+      
       // Sort chunks by chunkIndex
       chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+      
+      // Verify we have all chunks (check for gaps)
+      const expectedChunks = metadata.chunkCount;
+      if (chunks.length !== expectedChunks) {
+        console.warn(`⚠️ Chunk count mismatch: expected ${expectedChunks}, found ${chunks.length}`);
+        // Check for missing chunks
+        const missingChunks: number[] = [];
+        for (let i = 0; i < expectedChunks; i++) {
+          if (!chunks.find(c => c.chunkIndex === i)) {
+            missingChunks.push(i);
+          }
+        }
+        if (missingChunks.length > 0) {
+          reject(new Error(`Missing chunks: ${missingChunks.join(', ')}`));
+          return;
+        }
+      }
       
       // Extract chunk data
       const chunkData = chunks.map(item => item.chunk);
       
-      // Create blob from chunks
-      const blob = new Blob(chunkData, { type: metadata.type });
+      // Verify total size
+      const totalSize = chunkData.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+      if (totalSize !== metadata.size) {
+        console.warn(`⚠️ Size mismatch: expected ${metadata.size}, got ${totalSize}`);
+        // Still try to create blob, but log warning
+      }
       
-      resolve(blob);
+      // Create blob from chunks
+      try {
+        const blob = new Blob(chunkData, { type: metadata.type });
+        console.log(`✅ Reconstructed blob: ${blob.size} bytes from ${chunks.length} chunks`);
+        resolve(blob);
+      } catch (error) {
+        reject(new Error(`Failed to create blob: ${error instanceof Error ? error.message : 'Unknown error'}`));
+      }
     };
 
     request.onerror = () => {
