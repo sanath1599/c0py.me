@@ -5,7 +5,7 @@ import { Avatar } from './Avatar';
 import { CubProgress } from './CubProgress';
 import { Peer, FileTransfer } from '../types';
 import { formatFileSize } from '../utils/format';
-import { Send, X, CheckCircle, AlertCircle, Loader, File } from 'lucide-react';
+import { Send, X, CheckCircle, AlertCircle, Loader, File, ArrowLeft, ChevronLeft } from 'lucide-react';
 import { IncomingFileModal } from './IncomingFileModal';
 import { logUserAction } from '../utils/eventLogger';
 
@@ -59,11 +59,42 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [hoveredPeer, setHoveredPeer] = useState<string | null>(null);
   const [denPulse, setDenPulse] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileSlideIndex, setMobileSlideIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const transferProgressRef = useRef<HTMLDivElement>(null);
   const prevActiveTransfersRef = useRef(0);
   const otherPeers = peers.filter(peer => peer.id !== currentUser.id);
   const isRoomOwner = currentUser.name.toLowerCase().includes('lion') || currentUser.emoji === '🦁';
+
+  // Detect mobile and handle resize
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Determine mobile slide index based on state
+  useEffect(() => {
+    if (!isMobile) return;
+    
+    const hasActiveTransfer = transfers.some(t => 
+      t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting'
+    );
+    
+    if (hasActiveTransfer) {
+      setMobileSlideIndex(3); // Transfer progress
+    } else if (selectedPeer && selectedFiles.length > 0) {
+      setMobileSlideIndex(2); // Send button
+    } else if (selectedPeer) {
+      setMobileSlideIndex(1); // File selection
+    } else {
+      setMobileSlideIndex(0); // Den
+    }
+  }, [isMobile, selectedPeer, selectedFiles.length, transfers]);
 
   // Pulse animation for the den when transfers are active
   useEffect(() => {
@@ -172,6 +203,370 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   // Helper to check if there are active transfers
   const hasActiveTransfers = transfers.some(t => t.status === 'transferring');
 
+  // Mobile navigation handlers
+  const handleMobileBack = () => {
+    if (mobileSlideIndex > 0) {
+      // Clear selections when going back
+      if (mobileSlideIndex === 2) {
+        // Going back from send button - clear files only (keep peer)
+        onFilesSelected([]);
+      } else if (mobileSlideIndex === 1) {
+        // Going back from file selection - clear everything (files and peer)
+        onClearSelection();
+      }
+      // Slide index will be updated by the useEffect that watches state
+    }
+  };
+
+  // Mobile slide components
+  const renderMobileSlide = (slideIndex: number) => {
+    switch (slideIndex) {
+      case 0: // Den view
+        return (
+          <div className="w-full h-full">
+            {mode === 'den' ? (
+              <GlassCard className="p-6 relative overflow-hidden min-h-[550px]">
+                <div className="flex items-center justify-between mb-6" style={{ zIndex: 50, position: 'relative' }}>
+                  <h2 className="text-xl font-bold" style={{ color: '#2C1B12' }}>
+                    {isRoomOwner ? "Big Lion's Den" : "Lion's Den"}
+                  </h2>
+                </div>
+
+                {/* Online Statistics */}
+                <div className="mb-6 p-4 bg-white/20 backdrop-blur-sm rounded-lg border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)', zIndex: 50, position: 'relative' }}>
+                  <div className="grid grid-cols-2 gap-4 text-center">
+                    <div>
+                      <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
+                        {peers.length + 1}
+                      </div>
+                      <div className="text-sm" style={{ color: '#A6521B' }}>
+                        Total Lions
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
+                        {peers.filter(p => p.isOnline).length + 1}
+                      </div>
+                      <div className="text-sm" style={{ color: '#A6521B' }}>
+                        Online Now
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
+                    <div className="text-xs text-center" style={{ color: '#A6521B' }}>
+                      {currentWorld === 'jungle' ? '🌍 Global Jungle' : 
+                       currentWorld === 'room' ? '🔒 Private Room' :
+                       currentWorld === 'family' ? '🏠 Local Network' : '🦁 Lion\'s Den'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Den Background with Pulse Animation */}
+                <motion.div
+                  className="absolute inset-0 rounded-lg"
+                  style={{
+                    background: 'radial-gradient(circle at center, rgba(246, 193, 72, 0.1) 0%, transparent 70%)',
+                    zIndex: 0
+                  }}
+                  animate={denPulse ? {
+                    scale: [1, 1.05, 1],
+                    opacity: [0.3, 0.6, 0.3]
+                  } : {}}
+                  transition={{ duration: 2, repeat: Infinity }}
+                />
+
+                <div className="relative w-64 h-64 mx-auto flex items-center justify-center pb-16" style={{ zIndex: 1 }}>
+                  {/* Den Ring */}
+                  <motion.div
+                    className="absolute w-full h-full rounded-full border-4 border-dashed"
+                    style={{ borderColor: 'rgba(166, 82, 27, 0.3)' }}
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                  />
+
+                  {/* Cubs around the den */}
+                  {otherPeers.length > 0 && (
+                    <div className="absolute w-full h-full flex items-center justify-center">
+                      <div className="relative w-full h-full" style={{ minWidth: 256, minHeight: 256 }}>
+                        {otherPeers.map((peer, idx) => {
+                          const angle = (idx / otherPeers.length) * 2 * Math.PI;
+                          const radius = 100;
+                          const x = Math.cos(angle) * radius;
+                          const y = Math.sin(angle) * radius;
+                          const isSelected = selectedPeer?.id === peer.id;
+
+                          return (
+                            <motion.div
+                              key={peer.id}
+                              className="absolute"
+                              style={{ left: x, top: y, zIndex: isSelected ? 20 : 10 }}
+                              onMouseEnter={() => setHoveredPeer(peer.id)}
+                              onMouseLeave={() => setHoveredPeer(null)}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              <div className="relative">
+                                <Avatar
+                                  emoji={peer.emoji}
+                                  color={peer.color}
+                                  size="lg"
+                                  onClick={() => onPeerClick(peer)}
+                                  isOnline={peer.isOnline}
+                                  className={isSelected ? 'ring-4 ring-orange-400 shadow-lg' : 'hover:ring-2 hover:ring-orange-300 cursor-pointer'}
+                                />
+                                {/* Cub tooltip */}
+                                {hoveredPeer === peer.id && (
+                                  <motion.div
+                                    className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2 py-1 rounded bg-black/80 text-white text-xs whitespace-nowrap z-30"
+                                    initial={{ opacity: 0, y: -5 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                  >
+                                    {peer.name}
+                                  </motion.div>
+                                )}
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Big Lion in center */}
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center pointer-events-auto w-40">
+                    <motion.div
+                      animate={isRoomOwner ? { scale: [1, 1.05, 1] } : {}}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    >
+                      <Avatar
+                        emoji={currentUser.emoji}
+                        color={currentUser.color}
+                        size="xl"
+                      />
+                    </motion.div>
+                    <div className="mt-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm border z-30 w-full break-words whitespace-normal flex items-center justify-center gap-2" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
+                      <span className="text-sm font-medium" style={{ color: '#2C1B12' }}>
+                        You ({currentUser.name})
+                      </span>
+                      <button
+                        onClick={onEditProfile}
+                        className="p-1 rounded transition-colors flex-shrink-0"
+                        style={{ backgroundColor: 'rgba(166, 82, 27, 0.1)', color: '#A6521B' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.2)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(166, 82, 27, 0.1)')}
+                        title="Edit Profile"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Show 'No cubs' text below the radar if no other cubs */}
+                {otherPeers.length === 0 && (
+                  <div className="w-full flex flex-col items-center mt-4">
+                    <div className="text-center bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-sm border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)' }}>
+                      <p className="text-sm font-medium" style={{ color: '#2C1B12' }}>
+                        {currentWorld === 'jungle' ? 'No cubs in the jungle' : 
+                         currentWorld === 'room' ? 'No cubs in the room' :
+                         currentWorld === 'family' ? 'No family members online' : 'No cubs in the den'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </GlassCard>
+            ) : null}
+          </div>
+        );
+      
+      case 1: // File selection
+        return (
+          <div className="w-full h-full">
+            <GlassCard className="p-6 min-h-[550px]">
+              <div className="mb-4">
+                {selectedPeer && (
+                  <div className="flex items-center gap-3 mb-4">
+                    <Avatar
+                      emoji={selectedPeer.emoji}
+                      color={selectedPeer.color}
+                      size="md"
+                    />
+                    <div>
+                      <h3 className="font-semibold" style={{ color: '#2C1B12' }}>{selectedPeer.name}</h3>
+                      <p className="text-xs" style={{ color: '#A6521B' }}>
+                        {selectedPeer.isOnline ? 'Online' : 'Offline'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                onChange={handleFileInputChange}
+                className="hidden"
+                accept="*/*"
+              />
+              <motion.div
+                className={`
+                  relative w-full h-64 mx-auto rounded-full border-2 border-dashed
+                  flex items-center justify-center cursor-pointer transition-colors
+                `}
+                style={{
+                  borderColor: isDragOver ? '#F6C148' : 'rgba(166, 82, 27, 0.3)',
+                  backgroundColor: isDragOver ? 'rgba(246, 193, 72, 0.1)' : 'transparent'
+                }}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={handleClick}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="text-center">
+                  <motion.div
+                    animate={{ y: isDragOver ? -5 : 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <svg className="w-12 h-12 mx-auto mb-4" style={{ color: '#A6521B', opacity: 0.6 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p className="font-medium mb-2" style={{ color: '#2C1B12', opacity: 0.8 }}>
+                      {isDragOver ? 'Drop files here' : 'Drop files or click to select'}
+                    </p>
+                    <p className="text-sm" style={{ color: '#2C1B12', opacity: 0.6 }}>
+                      Any file type, any size
+                    </p>
+                  </motion.div>
+                </div>
+                {isDragOver && (
+                  <motion.div
+                    className="absolute inset-0 rounded-full border-2"
+                    style={{ borderColor: '#F6C148' }}
+                    animate={{ scale: [1, 1.1], opacity: [0.5, 0] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                  />
+                )}
+              </motion.div>
+              
+              <AnimatePresence>
+                {selectedFiles.length > 0 && (
+                  <motion.div
+                    className="mt-6 space-y-2 max-h-32 overflow-y-auto"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                  >
+                    {selectedFiles.map((file, index) => (
+                      <motion.div
+                        key={`${file.name}-${index}`}
+                        className="flex items-center gap-3 p-2 bg-white/5 rounded-lg"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        transition={{ delay: index * 0.1 }}
+                      >
+                        <File className="w-4 h-4 flex-shrink-0" style={{ color: '#A6521B', opacity: 0.6 }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm truncate" style={{ color: '#2C1B12' }}>{file.name}</p>
+                          <p className="text-xs" style={{ color: '#2C1B12', opacity: 0.6 }}>{formatFileSize(file.size)}</p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onFileRemove(index);
+                          }}
+                          className="p-1 rounded transition-colors"
+                          style={{ color: '#A6521B', opacity: 0.6 }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </motion.div>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </GlassCard>
+          </div>
+        );
+      
+      case 2: // Send button
+        return (
+          <div className="w-full h-full">
+            <GlassCard className="p-6 min-h-[550px]">
+              {selectedPeer && (
+                <div className="text-center mb-6">
+                  <Avatar
+                    emoji={selectedPeer.emoji}
+                    color={selectedPeer.color}
+                    size="xl"
+                    className="mx-auto mb-4"
+                  />
+                  <h3 className="text-lg font-bold mb-2" style={{ color: '#2C1B12' }}>{selectedPeer.name}</h3>
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <div className={`w-2 h-2 rounded-full ${selectedPeer.isOnline ? 'bg-green-400' : 'bg-red-400'}`} />
+                    <span className="text-sm" style={{ color: '#A6521B' }}>
+                      {selectedPeer.isOnline ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                  
+                  {selectedFiles.length > 0 && (
+                    <div className="mb-6">
+                      <p className="text-sm mb-3" style={{ color: '#2C1B12', opacity: 0.8 }}>
+                        {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} ready to send
+                      </p>
+                      <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {selectedFiles.map((file, index) => (
+                          <div key={index} className="flex items-center gap-2 p-2 bg-white/20 rounded text-sm">
+                            <File className="w-4 h-4 flex-shrink-0" style={{ color: '#A6521B' }} />
+                            <span className="truncate flex-1" style={{ color: '#2C1B12' }}>{file.name}</span>
+                            <span className="text-xs" style={{ color: '#A6521B', opacity: 0.7 }}>{formatFileSize(file.size)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <motion.button
+                        className="w-full mt-6 p-4 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ 
+                          backgroundColor: hasActiveTransfer ? '#999999' : '#F6C148',
+                          cursor: hasActiveTransfer ? 'not-allowed' : 'pointer'
+                        }}
+                        onClick={handleSend}
+                        disabled={hasActiveTransfer}
+                        whileHover={hasActiveTransfer ? {} : { scale: 1.02 }}
+                        whileTap={hasActiveTransfer ? {} : { scale: 0.98 }}
+                      >
+                        <Send size={20} />
+                        {hasActiveTransfer 
+                          ? 'Transfer in progress...' 
+                          : `Send ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}`
+                        }
+                      </motion.button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </GlassCard>
+          </div>
+        );
+      
+      case 3: // Transfer progress
+        return (
+          <div className="w-full h-full" ref={transferProgressRef}>
+            {transferProgressBox}
+          </div>
+        );
+      
+      default:
+        return null;
+    }
+  };
+
   // Transfer Progress Box
   const transferProgressBox = (
     <GlassCard className="p-6 w-full max-w-xl mx-auto z-50">
@@ -226,6 +621,59 @@ export const LionsDen: React.FC<LionsDenProps> = ({
       )}
     </GlassCard>
   );
+
+  // Mobile sliding interface wrapper
+  if (isMobile && mode === 'den') {
+    return (
+      <div className="relative w-full overflow-hidden" style={{ minHeight: '600px' }}>
+        {/* Sliding container */}
+        <motion.div
+          className="flex"
+          animate={{ x: `-${mobileSlideIndex * 100}%` }}
+          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          style={{ width: '400%' }}
+        >
+          {[0, 1, 2, 3].map((index) => (
+            <div key={index} className="w-full flex-shrink-0 px-4">
+              {renderMobileSlide(index)}
+            </div>
+          ))}
+        </motion.div>
+
+        {/* Back button */}
+        {mobileSlideIndex > 0 && (
+          <motion.button
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            onClick={handleMobileBack}
+            className="absolute top-4 left-4 z-50 p-2 rounded-full bg-white/90 backdrop-blur-sm shadow-lg border border-white/40 transition-colors"
+            style={{ color: '#2C1B12' }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+          >
+            <ChevronLeft size={20} />
+          </motion.button>
+        )}
+
+        {/* Slide indicators */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 flex gap-2">
+          {[0, 1, 2, 3].map((index) => (
+            <motion.div
+              key={index}
+              className={`w-2 h-2 rounded-full transition-colors ${
+                index === mobileSlideIndex ? 'bg-orange-500' : 'bg-white/40'
+              }`}
+              animate={{
+                scale: index === mobileSlideIndex ? 1.2 : 1,
+                opacity: index === mobileSlideIndex ? 1 : 0.5
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (mode === 'den') {
     // Only render Lion's Den (radar, user, no cubs text)
