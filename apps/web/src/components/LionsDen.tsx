@@ -247,9 +247,9 @@ export const LionsDen: React.FC<LionsDenProps> = ({
     switch (slideIndex) {
       case 0: // Den view
         return (
-          <div className="w-full h-full">
+          <div className="w-full h-full" style={{ maxWidth: '100%', overflow: 'visible' }}>
             {mode === 'den' ? (
-              <GlassCard className="p-6 relative overflow-hidden min-h-[550px]">
+              <GlassCard className="p-4 md:p-6 relative overflow-visible min-h-[500px] md:min-h-[550px]">
                 <div className="flex items-center justify-between mb-6" style={{ zIndex: 50, position: 'relative' }}>
                   <h2 className="text-xl font-bold" style={{ color: '#2C1B12' }}>
                     {isRoomOwner ? "Big Lion's Den" : "Lion's Den"}
@@ -298,7 +298,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                   <div className="grid grid-cols-2 gap-4 text-center">
                     <div>
                       <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
-                        {peers.length + 1}
+                        {filteredPeers.length + 1}
                       </div>
                       <div className="text-sm" style={{ color: '#A6521B' }}>
                         Total Lions
@@ -306,7 +306,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                     </div>
                     <div>
                       <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
-                        {peers.filter(p => p.isOnline).length + 1}
+                        {filteredPeers.filter(p => p.isOnline).length + 1}
                       </div>
                       <div className="text-sm" style={{ color: '#A6521B' }}>
                         Online Now
@@ -336,7 +336,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                   transition={{ duration: 2, repeat: Infinity }}
                 />
 
-                <div className="relative w-64 h-64 mx-auto flex items-center justify-center pb-16" style={{ zIndex: 1 }}>
+                <div className="relative w-48 h-48 md:w-64 md:h-64 mx-auto flex items-center justify-center pb-8 md:pb-16" style={{ zIndex: 1 }}>
                   {/* Den Ring */}
                   <motion.div
                     className="absolute w-full h-full rounded-full border-4 border-dashed"
@@ -348,7 +348,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
                   {/* Cubs around the den */}
                   {otherPeers.length > 0 && (
                     <div className="absolute w-full h-full flex items-center justify-center">
-                      <div className="relative w-full h-full" style={{ minWidth: 256, minHeight: 256 }}>
+                      <div className="relative w-full h-full" style={{ minWidth: '192px', minHeight: '192px' }}>
                         {otherPeers.map((peer, idx) => {
                           const angle = (idx / otherPeers.length) * 2 * Math.PI;
                           const radius = 100;
@@ -686,17 +686,19 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   // Mobile sliding interface wrapper
   if (isMobile && mode === 'den') {
     return (
-      <div className="relative w-full overflow-hidden" style={{ minHeight: '600px' }}>
+      <div className="relative w-full overflow-hidden" style={{ minHeight: '600px', maxWidth: '100vw' }}>
         {/* Sliding container */}
         <motion.div
           className="flex"
           animate={{ x: `-${mobileSlideIndex * 100}%` }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          style={{ width: '400%' }}
+          style={{ width: '400%', display: 'flex' }}
         >
           {[0, 1, 2, 3].map((index) => (
-            <div key={index} className="w-full flex-shrink-0 px-4">
-              {renderMobileSlide(index)}
+            <div key={index} className="flex-shrink-0" style={{ width: '25%', maxWidth: '100vw', padding: '0 0.75rem', boxSizing: 'border-box' }}>
+              <div className="w-full h-full">
+                {renderMobileSlide(index)}
+              </div>
             </div>
           ))}
         </motion.div>
@@ -746,12 +748,49 @@ export const LionsDen: React.FC<LionsDenProps> = ({
           </h2>
         </div>
 
+        {/* Search Bar */}
+        <div className="mb-4" style={{ zIndex: 50, position: 'relative' }}>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#A6521B', opacity: 0.6 }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => {
+                setSearchQuery(e.target.value);
+                if (e.target.value.length > 0) {
+                  logUserAction.peerSelected('search', 'search_query');
+                }
+              }}
+              placeholder={
+                currentWorld === 'jungle' 
+                  ? "Search by name or user ID..." 
+                  : currentWorld === 'room'
+                  ? "Search room members..."
+                  : currentWorld === 'family'
+                  ? "Search family members..."
+                  : "Search peers..."
+              }
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-orange-200 bg-white/60 backdrop-blur-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-300 text-sm"
+              style={{ color: '#2C1B12' }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/40 transition-colors"
+                style={{ color: '#A6521B' }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Online Statistics */}
         <div className="mb-6 p-4 bg-white/20 backdrop-blur-sm rounded-lg border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)', zIndex: 50, position: 'relative' }}>
           <div className="grid grid-cols-2 gap-4 text-center">
             <div>
               <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
-                {peers.length + 1}
+                {filteredPeers.length + 1}
               </div>
               <div className="text-sm" style={{ color: '#A6521B' }}>
                 Total Lions
@@ -759,7 +798,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
             </div>
             <div>
               <div className="text-2xl font-bold" style={{ color: '#2C1B12' }}>
-                {peers.filter(p => p.isOnline).length + 1}
+                {filteredPeers.filter(p => p.isOnline).length + 1}
               </div>
               <div className="text-sm" style={{ color: '#A6521B' }}>
                 Online Now
@@ -801,7 +840,7 @@ export const LionsDen: React.FC<LionsDenProps> = ({
           {/* Cubs around the den */}
           {otherPeers.length > 0 && (
             <div className="absolute w-full h-full flex items-center justify-center">
-              <div className="relative w-full h-full" style={{ minWidth: 256, minHeight: 256 }}>
+              <div className="relative w-full h-full" style={{ minWidth: '256px', minHeight: '256px' }}>
                 {otherPeers.map((peer, idx) => {
                   const angle = (idx / otherPeers.length) * 2 * Math.PI;
                   const radius = 110;
