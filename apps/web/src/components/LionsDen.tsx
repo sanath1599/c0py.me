@@ -23,6 +23,8 @@ interface LionsDenProps {
     fileSize: number;
     fileType: string;
   }>;
+  searchQuery?: string;
+  onSearchChange?: (query: string) => void;
   onPeerClick: (peer: Peer) => void;
   onSendFiles: (files: File[], peer: Peer) => void;
   onCancelTransfer: (transferId: string) => void;
@@ -44,6 +46,8 @@ export const LionsDen: React.FC<LionsDenProps> = ({
   transfers,
   currentWorld,
   incomingFiles,
+  searchQuery = '',
+  onSearchChange,
   onPeerClick,
   onSendFiles,
   onCancelTransfer,
@@ -276,6 +280,25 @@ export const LionsDen: React.FC<LionsDenProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Search Bar */}
+        {onSearchChange && (
+          <div className="mb-4" style={{ zIndex: 50, position: 'relative' }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => onSearchChange(e.target.value)}
+              placeholder={
+                currentWorld === 'jungle' 
+                  ? "Search by name or user ID..." 
+                  : currentWorld === 'room'
+                  ? "Search room members..."
+                  : "Search family members..."
+              }
+              className="w-full px-4 py-2 rounded-xl border border-orange-200 bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-base"
+            />
+          </div>
+        )}
 
         {/* Online Statistics */}
         <div className="mb-6 p-4 bg-white/20 backdrop-blur-sm rounded-lg border" style={{ borderColor: 'rgba(166, 82, 27, 0.2)', zIndex: 50, position: 'relative' }}>

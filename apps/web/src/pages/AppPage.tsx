@@ -621,29 +621,6 @@ const filteredPeers = React.useMemo(() => {
       {/* Main content */}
       {selectedWorld && (
         <main className="p-0 md:p-0 w-full">
-          {/* Search Bar */}
-          {selectedWorld && (
-            <div className="mb-6 flex justify-center px-4 md:px-8">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => {
-                  setSearchQuery(e.target.value);
-                  if (e.target.value.length > 0) {
-                    logUserAction.peerSelected('search', 'search_query');
-                  }
-                }}
-                placeholder={
-                  selectedWorld === 'jungle' 
-                    ? "Search by name or user ID..." 
-                    : selectedWorld === 'room'
-                    ? "Search room members..."
-                    : "Search family members..."
-                }
-                className="w-full max-w-md px-4 py-2 rounded-xl border border-orange-200 bg-white/60 shadow focus:outline-none focus:ring-2 focus:ring-orange-300 text-lg"
-              />
-            </div>
-          )}
 
           {/* --- New Three-Row Layout --- */}
 
@@ -659,6 +636,13 @@ const filteredPeers = React.useMemo(() => {
                 transfers={transfers}
                 currentWorld={selectedWorld}
                 incomingFiles={incomingFiles}
+                searchQuery={searchQuery}
+                onSearchChange={(query) => {
+                  setSearchQuery(query);
+                  if (query.length > 0) {
+                    logUserAction.peerSelected('search', 'search_query');
+                  }
+                }}
                 onPeerClick={handlePeerClick}
                 onSendFiles={handleSendFiles}
                 onCancelTransfer={handleCancelTransfer}
@@ -686,6 +670,13 @@ const filteredPeers = React.useMemo(() => {
               transfers={transfers}
               currentWorld={selectedWorld}
               incomingFiles={incomingFiles}
+              searchQuery={searchQuery}
+              onSearchChange={(query) => {
+                setSearchQuery(query);
+                if (query.length > 0) {
+                  logUserAction.peerSelected('search', 'search_query');
+                }
+              }}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
               onCancelTransfer={handleCancelTransfer}
@@ -706,6 +697,13 @@ const filteredPeers = React.useMemo(() => {
               transfers={transfers}
               currentWorld={selectedWorld}
               incomingFiles={incomingFiles}
+              searchQuery={searchQuery}
+              onSearchChange={(query) => {
+                setSearchQuery(query);
+                if (query.length > 0) {
+                  logUserAction.peerSelected('search', 'search_query');
+                }
+              }}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
               onCancelTransfer={handleCancelTransfer}
@@ -726,6 +724,13 @@ const filteredPeers = React.useMemo(() => {
               transfers={transfers}
               currentWorld={selectedWorld}
               incomingFiles={incomingFiles}
+              searchQuery={searchQuery}
+              onSearchChange={(query) => {
+                setSearchQuery(query);
+                if (query.length > 0) {
+                  logUserAction.peerSelected('search', 'search_query');
+                }
+              }}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
               onCancelTransfer={handleCancelTransfer}
@@ -749,6 +754,13 @@ const filteredPeers = React.useMemo(() => {
               transfers={transfers}
               currentWorld={selectedWorld}
               incomingFiles={incomingFiles}
+              searchQuery={searchQuery}
+              onSearchChange={(query) => {
+                setSearchQuery(query);
+                if (query.length > 0) {
+                  logUserAction.peerSelected('search', 'search_query');
+                }
+              }}
               onPeerClick={handlePeerClick}
               onSendFiles={handleSendFiles}
               onCancelTransfer={handleCancelTransfer}

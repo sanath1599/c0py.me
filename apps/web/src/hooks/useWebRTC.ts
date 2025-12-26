@@ -859,9 +859,9 @@ export const useWebRTC = (
               
               // Throttled progress update (synchronous calculation, async state update)
               const now = Date.now();
-              const { WEBRTC_CONSTANTS } = await import('@sharedrop/config');
-              const PROGRESS_UPDATE_INTERVAL = WEBRTC_CONSTANTS.PROGRESS_UPDATE_INTERVAL;
-              const PROGRESS_CHANGE_THRESHOLD = WEBRTC_CONSTANTS.PROGRESS_CHANGE_THRESHOLD;
+              // Use constants directly to avoid async import delay
+              const PROGRESS_UPDATE_INTERVAL = 100; // ms
+              const PROGRESS_CHANGE_THRESHOLD = 0.1; // %
               
               // Always update on first chunk or if enough time has passed
               const shouldUpdate = receivedFile.lastProgressUpdate === 0 || 
@@ -886,10 +886,11 @@ export const useWebRTC = (
                   const currentSpeed = Math.round(speed);
                   const currentTimeRemaining = Math.round(timeRemaining);
                   
-                  // Use setTimeout instead of requestAnimationFrame for more reliable updates
-                  setTimeout(() => {
-                    setTransfers(prev => prev.map(t => {
+                  // Update immediately without setTimeout for faster UI updates
+                  setTransfers(prev => {
+                    const updated = prev.map(t => {
                       if (t.id === transferId && t.status === 'transferring') {
+                        console.log(`📊 Updating progress for ${transferId}: ${currentProgress}% (${currentSpeed} bytes/s)`);
                         return { 
                           ...t, 
                           progress: currentProgress,
@@ -898,8 +899,9 @@ export const useWebRTC = (
                         };
                       }
                       return t;
-                    }));
-                  }, 0);
+                    });
+                    return updated;
+                  });
                 }
               }
             }
