@@ -28,6 +28,9 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
 
   // Prefer fromName if available, fallback to from
   const senderName = (file as any).fromName || file.from;
+  
+  // Check if File System Access API is available
+  const hasFileSystemAccess = 'showSaveFilePicker' in window && window.isSecureContext;
 
   return (
     <AnimatePresence>
@@ -60,6 +63,11 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
                 <span className="text-xs font-bold tracking-widest text-orange-700 drop-shadow-sm">Incoming File</span>
                 <p className="text-sm text-orange-800 font-medium mb-1 mt-2">From: {senderName}</p>
                 <p className="text-xs text-orange-700/80">{formatFileSize(file.fileSize)}</p>
+                {!hasFileSystemAccess && (
+                  <p className="text-xs text-orange-600/70 mt-2 px-2 py-1 bg-orange-50/50 rounded">
+                    Note: File will be saved to browser storage (choose download location after transfer)
+                  </p>
+                )}
               </div>
               {/* Actions */}
               <div className="flex gap-4 mt-8 w-full">
@@ -70,23 +78,48 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
                     // Try to get file handle using File System Access API
                     let fileHandle: FileSystemFileHandle | undefined;
                     
-                    if ('showSaveFilePicker' in window) {
+                    console.log('🔍 Checking for File System Access API support...');
+                    console.log('   showSaveFilePicker available:', 'showSaveFilePicker' in window);
+                    console.log('   isSecureContext:', window.isSecureContext);
+                    console.log('   protocol:', window.location.protocol);
+                    console.log('   hostname:', window.location.hostname);
+                    
+                    // File System Access API requires HTTPS (or localhost)
+                    const isSecure = window.isSecureContext || 
+                                    window.location.protocol === 'https:' || 
+                                    window.location.hostname === 'localhost' ||
+                                    window.location.hostname === '127.0.0.1';
+                    
+                    if ('showSaveFilePicker' in window && isSecure) {
                       try {
+                        console.log('📂 Opening file save dialog...');
+                        const fileExtension = file.fileName.split('.').pop() || '';
+                        const mimeType = file.fileType || 'application/octet-stream';
+                        
                         fileHandle = await (window as any).showSaveFilePicker({
                           suggestedName: file.fileName,
-                          types: [{
+                          types: fileExtension ? [{
                             description: 'File',
-                            accept: { [file.fileType || 'application/octet-stream']: [file.fileName.split('.').pop() || ''] }
-                          }]
+                            accept: { [mimeType]: [`.${fileExtension}`] }
+                          }] : undefined
                         });
-                        console.log('📁 User selected save location:', fileHandle.name);
+                        console.log('✅ User selected save location:', fileHandle.name);
                       } catch (error: any) {
                         // User cancelled or error occurred
-                        if (error.name !== 'AbortError') {
+                        if (error.name === 'AbortError') {
+                          console.log('⚠️ User cancelled file save dialog');
+                          return; // Don't proceed if user cancelled
+                        } else {
                           console.error('❌ Error getting file handle:', error);
+                          console.error('   Error name:', error.name);
+                          console.error('   Error message:', error.message);
+                          // Continue without file handle - will use memory/IndexedDB fallback
                         }
-                        // Continue without file handle - will use memory/IndexedDB fallback
                       }
+                    } else {
+                      console.warn('⚠️ File System Access API not available');
+                      console.warn('   Browser may not support showSaveFilePicker');
+                      console.warn('   File will be saved to memory/IndexedDB instead');
                     }
                     
                     onAccept(fileHandle);

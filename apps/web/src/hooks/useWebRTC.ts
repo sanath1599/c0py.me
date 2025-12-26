@@ -68,7 +68,8 @@ export const useWebRTC = (
     lastProgressUpdate: number;
     lastProgressSize: number; // Track size at last progress update
     useIndexedDB: boolean;
-    transferId: string;
+    transferId: string; // Receiver's transferId
+    senderTransferId: string; // Sender's transferId (for retry requests)
     chunkIndex: number;
     expectedChunks: number;
     receivedChunkIndices: Set<number>;
@@ -643,9 +644,13 @@ export const useWebRTC = (
     transferId: string,
     chunkIndices: number[]
   ) => {
+    console.log(`🔍 Looking for transfer ${transferId} in activeTransfersRef`);
+    console.log(`   Available transferIds:`, Array.from(activeTransfersRef.current.keys()));
+    
     const transfer = activeTransfersRef.current.get(transferId);
     if (!transfer) {
       console.error(`❌ Transfer ${transferId} not found for retry`);
+      console.error(`   Available transfers:`, Array.from(activeTransfersRef.current.keys()));
       return;
     }
 
@@ -657,6 +662,7 @@ export const useWebRTC = (
     }
 
     console.log(`🔄 Retrying ${chunkIndices.length} chunks for transfer ${transferId}`);
+    console.log(`   Chunk indices to resend:`, chunkIndices);
     
     let fileToSend = file;
     
@@ -1007,6 +1013,10 @@ export const useWebRTC = (
                   const chunkSize = message.chunkSize || 8192;
                   const expectedChunks = Math.ceil(message.size / chunkSize);
                   
+                  // Get sender's transferId from incomingFiles if available
+                  const incomingFile = incomingFiles.find(f => f.from === from);
+                  const senderTransferId = incomingFile?.transferId || transferId; // Fallback to receiver's if not found
+                  
                   // Set up received file immediately (synchronously) to avoid race conditions
                   // Only create new entry if it doesn't exist (wasn't created by acceptIncomingFile)
                   if (!existingReceivedFile) {
@@ -1020,7 +1030,8 @@ export const useWebRTC = (
                       lastProgressUpdate: 0,
                       lastProgressSize: 0, // Track size at last progress update
                       useIndexedDB: false, // Will be updated async
-                      transferId: transferId,
+                      transferId: transferId, // Receiver's transferId
+                      senderTransferId: senderTransferId, // Sender's transferId (for retry requests)
                       chunkIndex: 0,
                       expectedChunks: expectedChunks,
                       receivedChunkIndices: new Set<number>(),
@@ -1039,6 +1050,10 @@ export const useWebRTC = (
                     existingReceivedFile.pendingChunkOperations = [];
                     existingReceivedFile.nextRetryChunkIndex = undefined;
                     existingReceivedFile.writeOffset = 0; // Reset write offset
+                    // Update sender's transferId if we have it
+                    if (incomingFile?.transferId) {
+                      existingReceivedFile.senderTransferId = incomingFile.transferId;
+                    }
                   }
                   
                   // Add transfer immediately
@@ -1169,9 +1184,10 @@ export const useWebRTC = (
                             
                             if (missingChunkIndices.length > 0) {
                               console.log(`🔄 Requesting retry for ${missingChunkIndices.length} missing chunks`);
+                              console.log(`   Using sender's transferId: ${receivedFile.senderTransferId || receivedFile.transferId}`);
                               dataChannel.send(JSON.stringify({
                                 type: 'chunk-retry-request',
-                                transferId: receivedFile.transferId,
+                                transferId: receivedFile.senderTransferId || receivedFile.transferId, // Use sender's transferId
                                 chunkIndices: missingChunkIndices
                               }));
                               
@@ -1259,9 +1275,10 @@ export const useWebRTC = (
                                 const dataChannel = dataChannelsRef.current.get(from);
                                 if (dataChannel && dataChannel.readyState === 'open') {
                                   console.log(`🔄 Requesting retry for ${missing.length} missing chunks`);
+                                  console.log(`   Using sender's transferId: ${receivedFile.senderTransferId || receivedFile.transferId}`);
                                   dataChannel.send(JSON.stringify({
                                     type: 'chunk-retry-request',
-                                    transferId: receivedFile.transferId,
+                                    transferId: receivedFile.senderTransferId || receivedFile.transferId, // Use sender's transferId
                                     chunkIndices: missing
                                   }));
                                   
@@ -1710,7 +1727,8 @@ export const useWebRTC = (
         lastProgressUpdate: 0,
         lastProgressSize: 0,
         useIndexedDB: false,
-        transferId: transferId, // Use consistent transferId
+        transferId: transferId, // Receiver's transferId
+        senderTransferId: incomingFile.transferId, // Store sender's transferId for retry requests
         chunkIndex: 0,
         expectedChunks: 0, // Will be set when file-start is received
         receivedChunkIndices: new Set<number>(),
