@@ -93,16 +93,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setDenPulse(otherPeers.length > 0);
   }, [otherPeers.length]);
 
-  // Auto-advance to progress when transfer starts
+  // Auto-advance to progress when transfer starts (only if not manually navigating)
+  const prevHasActiveTransferRef = useRef(false);
   useEffect(() => {
     const hasActiveTransfer = transfers.some(t => 
       t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting'
     );
     
-    if (hasActiveTransfer && currentSlide !== 3) {
+    // Only auto-advance if transfer just started (wasn't active before)
+    if (hasActiveTransfer && !prevHasActiveTransferRef.current && currentSlide < 3) {
       setCurrentSlide(3);
     }
-  }, [transfers, currentSlide]);
+    
+    prevHasActiveTransferRef.current = hasActiveTransfer;
+  }, [transfers]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -177,13 +181,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Navigation handlers
   const handlePrevious = () => {
     if (currentSlide > 0) {
-      setCurrentSlide(currentSlide - 1);
+      setCurrentSlide(prev => prev - 1);
     }
   };
 
   const handleNext = () => {
     if (currentSlide < 3) {
-      setCurrentSlide(currentSlide + 1);
+      setCurrentSlide(prev => prev + 1);
     }
   };
 
@@ -704,13 +708,27 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const showRightArrow = currentSlide < 3 && canProceedToNext();
 
   return (
-    <div className="relative w-full overflow-hidden" style={{ minHeight: '600px', maxWidth: '100vw' }}>
+    <div 
+      className="relative w-full overflow-hidden" 
+      style={{ minHeight: '600px', maxWidth: '100vw' }}
+    >
       {/* Carousel Container */}
       <motion.div
         className="flex"
         animate={{ x: `-${currentSlide * 100}%` }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        style={{ width: '400%' }}
+        style={{ width: '400%', touchAction: 'pan-x' }}
+        drag="x"
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={0.2}
+        onDragEnd={(event, info) => {
+          const threshold = 50;
+          if (info.offset.x > threshold && currentSlide > 0) {
+            handlePrevious();
+          } else if (info.offset.x < -threshold && currentSlide < 3) {
+            handleNext();
+          }
+        }}
       >
         {[0, 1, 2, 3].map((index) => (
           <div key={index} className="flex-shrink-0" style={{ width: '25%', maxWidth: '100vw', padding: '0 0.75rem', boxSizing: 'border-box' }}>
