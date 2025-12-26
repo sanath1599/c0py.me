@@ -66,6 +66,11 @@ export const CubProgress: React.FC<CubProgressProps> = ({
     }
   };
   
+  // Determine progress bar color based on transfer direction
+  const progressBarGradient = isIncoming
+    ? 'linear-gradient(270deg, #22c55e, #4ade80, #86efac, #22c55e, #4ade80, #86efac)' // Green gradient for receiving
+    : 'linear-gradient(270deg, #ff9800, #ffb300, #ffd740, #ff9800, #ffb300, #ffd740)'; // Orange gradient for sending
+
   return (
     <div className={`relative ${className}`}>
       {/* Progress Bar Background */}
@@ -79,7 +84,7 @@ export const CubProgress: React.FC<CubProgressProps> = ({
             top: '50%',
             transform: 'translateY(-50%)',
             width: '100%',
-            background: 'linear-gradient(270deg, #ff9800, #ffb300, #ffd740, #ff9800, #ffb300, #ffd740)',
+            background: progressBarGradient,
             backgroundSize: '400% 100%',
             animation: 'fireBar 2s linear infinite',
           }}
