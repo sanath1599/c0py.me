@@ -33,74 +33,116 @@ A modern, open-source web application for secure peer-to-peer file sharing with 
 - **Real-time Progress**: Watch animated cubs track transfer progress with live speed and time estimates.
 
 ### Advanced Features
+- **Robust Dynamic Chunking**: Intelligent chunking system with bidirectional negotiation and metadata
 - **Mobile Optimizations**: Intelligent device detection with optimized chunk sizes for mobile devices (8KB chunks)
 - **IndexedDB Support**: Large files (>50MB) on mobile devices are stored in IndexedDB to prevent memory issues
 - **Adaptive Chunking**: Dynamic chunk sizes based on device type and file size:
-  - Mobile devices: 8KB chunks for stability
-  - Desktop small files (<100MB): 64KB chunks
-  - Desktop medium files (100-500MB): 128KB chunks
-  - Desktop large files (>500MB): 256KB chunks
-- **Flow Control**: Intelligent buffer management with automatic pause/resume to prevent buffer overflow
-- **Progress Throttling**: Optimized UI updates to prevent performance degradation during large transfers
+  - Mobile devices: 8KB chunks for files <50MB, 16KB for larger files
+  - Desktop small files (<100MB): 32KB chunks
+  - Desktop medium files (100-500MB): 64KB chunks
+  - Desktop large files (>500MB): 64KB chunks (optimized for reliability)
+- **Gap Detection & Recovery**: Real-time detection of missing chunks with automatic resend requests
+- **Hash-Based Integrity**: SHA-256 verification for each chunk and full file to ensure perfect transmission
+- **Retry Logic**: Automatic retry for failed chunks (up to 3 attempts) with exponential backoff
+- **Flow Control**: Intelligent buffer management (256KB high, 16KB low) with automatic pause/resume
+- **Chunk Pacing**: Adaptive delays based on buffer state to prevent overwhelming the data channel
+- **Progress Throttling**: Optimized UI updates (100ms intervals) to prevent performance degradation
 - **Cross-Platform**: Full support for mobile, tablet, and desktop devices with responsive design
 - **Network Detection**: Automatic mobile data detection with warnings for Family mode (WiFi only)
 
 ## File Transfer Flow
 
-The application uses an intelligent file transfer system that adapts to device capabilities and file sizes:
+The application uses a robust chunking system with dynamic sizing, gap detection, integrity verification, and automatic recovery:
 
 ```mermaid
 flowchart TD
-    A[File Selected] --> B{Is Mobile?}
-    B -->|Yes| C{File Size > 50MB?}
-    B -->|No| D[Use In-Memory File]
-    C -->|Yes| E[Store to IndexedDB]
-    C -->|No| D
-    E --> F[File Ready for Transfer]
-    D --> F
+    subgraph Sender[Sender Side]
+        A[File Selected] --> B[Calculate File Hash SHA-256]
+        B --> C{Is Mobile?}
+        C -->|Yes| D{File Size > 50MB?}
+        C -->|No| E[Use In-Memory File]
+        D -->|Yes| F[Store to IndexedDB]
+        D -->|No| E
+        F --> G[Create Transfer Manifest]
+        E --> G
+        
+        G --> H[Send transfer-manifest]
+        H --> I[Receive manifest-ack]
+        I --> J[Negotiate Chunk Size]
+        J --> K{Calculate Chunk Size}
+        K -->|Mobile| L[8KB or 16KB]
+        K -->|Desktop| M{File Size?}
+        M -->|>500MB| N[64KB Chunks]
+        M -->|>100MB| O[64KB Chunks]
+        M -->|Other| P[32KB Chunks]
+        
+        L --> Q[Generate Chunk with Metadata]
+        N --> Q
+        O --> Q
+        P --> Q
+        
+        Q --> R[Create Binary Chunk Header]
+        R --> S[Send Chunk with Hash]
+        S --> T{Buffer Check}
+        T -->|>256KB| U[Pause & Wait]
+        T -->|<16KB| V{Adaptive Delay}
+        V -->|Buffer >128KB| W[Wait 10ms]
+        V -->|Buffer >64KB| X[Wait 5ms]
+        V -->|Other| Y[No Delay]
+        W --> Z[Send Next Chunk]
+        X --> Z
+        Y --> Z
+        U --> AA[onbufferedamountlow]
+        AA --> Z
+        
+        Z --> AB{ACK Received?}
+        AB -->|Yes| AC{More Chunks?}
+        AB -->|Resend Request| AD[Resend Missing Chunks]
+        AD --> Q
+        AC -->|Yes| Q
+        AC -->|No| AE[Send transfer-end]
+        AE --> AF[Wait for transfer-complete]
+    end
     
-    F --> G{Detect Device Type}
-    G -->|Mobile| H[Use 8KB Chunks]
-    G -->|Desktop| I{File Size?}
-    I -->|>500MB| J[Use 256KB Chunks]
-    I -->|>100MB| K[Use 128KB Chunks]
-    I -->|Other| L[Use 64KB Chunks]
+    subgraph Receiver[Receiver Side]
+        AG[Receive transfer-manifest] --> AH[Calculate File Hash]
+        AH --> AI[Send manifest-ack]
+        AI --> AJ[Initialize Chunk Bitmap]
+        AJ --> AK[Receive Binary Chunk]
+        AK --> AL[Parse Chunk Header]
+        AL --> AM[Verify Chunk Hash]
+        AM -->|Valid| AN[Store Chunk]
+        AM -->|Invalid| AO[Request Resend]
+        AO --> AK
+        
+        AN --> AP{Is Mobile?}
+        AP -->|Yes| AQ{File Size > 50MB?}
+        AP -->|No| AR[Store in Memory Map]
+        AQ -->|Yes| AS[Write to IndexedDB]
+        AQ -->|No| AR
+        
+        AS --> AT[Update Bitmap]
+        AR --> AT
+        AT --> AU[Mark Chunk Received]
+        AU --> AV{Gap Detected?}
+        AV -->|Yes| AW[Request Resend for Gaps]
+        AV -->|No| AX[Send chunk-ack]
+        AW --> AK
+        AX --> AY{All Chunks Received?}
+        AY -->|No| AK
+        AY -->|Yes| AZ[Receive transfer-end]
+        AZ --> BA[Assemble File from Chunks]
+        BA --> BB{From IndexedDB?}
+        BB -->|Yes| BC[Read from IDB & Create Blob]
+        BB -->|No| BD[Create Blob from Memory]
+        BC --> BE[Verify Full File Hash]
+        BD --> BE
+        BE -->|Match| BF[Send transfer-complete]
+        BE -->|Mismatch| BG[Send transfer-failed]
+        BF --> BH[File Ready]
+    end
     
-    H --> M[Send with Flow Control]
-    J --> M
-    K --> M
-    L --> M
-    
-    M --> N{Buffer Check}
-    N -->|Buffer Full| O[Pause & Wait]
-    N -->|Buffer OK| P{Read Source}
-    P -->|IndexedDB| Q[Read Chunk from IDB]
-    P -->|Memory| R[Read Chunk from File]
-    Q --> S[Send Chunk]
-    R --> S
-    O --> T[onbufferedamountlow]
-    T --> P
-    
-    S --> U{Throttled Update?}
-    U -->|Yes| V[Update Progress UI]
-    U -->|No| W[Skip Update]
-    V --> X{More Chunks?}
-    W --> X
-    X -->|Yes| N
-    X -->|No| Y[Complete]
-    
-    Z[Receiving Chunk] --> AA{Is Mobile?}
-    AA -->|Yes| AB{File Size > 50MB?}
-    AA -->|No| AC[Store in Memory]
-    AB -->|Yes| AD[Write to IndexedDB]
-    AB -->|No| AC
-    AD --> AE{File Complete?}
-    AC --> AE
-    AE -->|Yes| AF{From IndexedDB?}
-    AF -->|Yes| AG[Read from IDB & Create Blob]
-    AF -->|No| AH[Create Blob from Memory]
-    AG --> AI[File Ready]
-    AH --> AI
+    Sender -.->|WebRTC DataChannel| Receiver
 ```
 
 ## How It Works
@@ -116,18 +158,29 @@ flowchart TD
    - The system automatically detects your device type and optimizes the transfer
    - Recipient sees file details and can accept or decline
 
-3. **Intelligent File Transfer**
-   - Files are automatically stored in IndexedDB on mobile if >50MB
-   - Chunk size adapts based on device and file size
-   - Flow control prevents buffer overflow
+3. **Robust File Transfer**
+   - File hash calculated using SHA-256 before transfer
+   - Transfer manifest sent with file metadata and proposed chunk size
+   - Chunk size negotiated between sender and receiver
+   - Files automatically stored in IndexedDB on mobile if >50MB
+   - Each chunk includes metadata (sequence, offset, size, hash)
+   - Real-time gap detection with automatic resend requests
+   - Flow control with adaptive pacing prevents buffer overflow
+   - Per-chunk hash verification ensures data integrity
+   - Retry logic handles transient failures (up to 3 attempts)
+   - Final file hash verification confirms perfect transmission
    - Real-time progress tracking with throttled UI updates
-   - Direct P2P transfer via WebRTC
+   - Direct P2P transfer via WebRTC (no server storage)
 
-4. **Receive & Download**
-   - Recipient receives file chunks
+4. **Receive & Verification**
+   - Recipient receives transfer manifest and acknowledges
+   - Chunks received with metadata and verified individually
+   - Missing chunks detected via bitmap tracking
+   - Automatic resend requests for gaps or hash mismatches
    - Large files stored in IndexedDB automatically
-   - File assembled and ready for download
-   - Original file metadata preserved
+   - File assembled from verified chunks in correct order
+   - Final SHA-256 hash verification ensures integrity
+   - File ready for download with original metadata preserved
 
 ## Architecture
 
@@ -222,14 +275,20 @@ sharedrop/
 ### File Transfer Process
 
 1. **File Selection**: Select files (system detects device and file size)
-2. **Storage Decision**: Large files on mobile stored in IndexedDB automatically
-3. **Connection Request**: Sender requests connection with recipient
-4. **Authorization**: Recipient approves via modal with file details
-5. **WebRTC Handshake**: Secure peer-to-peer connection established
-6. **Adaptive Chunking**: Chunk size determined by device and file size
-7. **Flow Control**: Buffer management prevents overflow
-8. **File Transfer**: Chunked transfer with throttled progress updates
-9. **Completion**: File assembled and ready for download
+2. **Hash Calculation**: SHA-256 hash calculated for entire file
+3. **Storage Decision**: Large files on mobile stored in IndexedDB automatically
+4. **Connection Request**: Sender requests connection with recipient
+5. **Authorization**: Recipient approves via modal with file details
+6. **WebRTC Handshake**: Secure peer-to-peer connection established
+7. **Manifest Exchange**: Sender sends transfer manifest, receiver acknowledges and negotiates chunk size
+8. **Adaptive Chunking**: Chunk size determined by device and file size (negotiated between peers)
+9. **Chunk Transfer**: Each chunk sent with metadata header (sequence, offset, size, hash)
+10. **Gap Detection**: Receiver tracks received chunks in bitmap, detects gaps in real-time
+11. **Automatic Recovery**: Missing chunks automatically requested for resend
+12. **Flow Control**: Buffer management (256KB high, 16KB low) with adaptive pacing
+13. **Integrity Verification**: Each chunk hash verified, full file hash verified at completion
+14. **Retry Logic**: Failed chunks retried up to 3 times with exponential backoff
+15. **Completion**: File assembled from verified chunks, hash verified, ready for download
 
 ### Supported File Types
 - **All file types** supported (no restrictions)
@@ -326,10 +385,17 @@ src/
 
 #### File Handling
 - **Device Detection**: Automatic mobile/tablet/desktop detection
-- **IndexedDB Integration**: Large file storage on mobile devices
-- **Adaptive Chunking**: Dynamic chunk sizes based on device and file size
-- **Progress Tracking**: Throttled UI updates for performance
-- **Memory Management**: Efficient handling of large files
+- **IndexedDB Integration**: Large file storage on mobile devices (>50MB)
+- **Hash Calculation**: SHA-256 hashing for file and chunk integrity
+- **Robust Chunking**: Dynamic chunk sizes with bidirectional negotiation
+- **Chunk Metadata**: Each chunk includes sequence, offset, size, and hash
+- **Gap Detection**: Bitmap-based tracking with real-time gap identification
+- **Automatic Recovery**: Missing chunks automatically requested and resent
+- **Integrity Verification**: Per-chunk and full-file hash verification
+- **Retry Logic**: Automatic retry for failed chunks with exponential backoff
+- **Flow Control**: Intelligent buffer management with adaptive pacing
+- **Progress Tracking**: Throttled UI updates (100ms intervals) for performance
+- **Memory Management**: Efficient handling of large files with IndexedDB
 
 #### UI Components
 - **GlassCard**: Reusable glassmorphic card component
@@ -392,11 +458,17 @@ docker run -p 3001:3001 c0py-me
 ## Performance Optimizations
 
 ### Transfer Optimizations
-- **Adaptive Chunking**: Optimal chunk sizes for different devices and file sizes
-- **Flow Control**: Prevents buffer overflow and ensures smooth transfers
-- **Progress Throttling**: Reduces UI update frequency for better performance
-- **IndexedDB**: Efficient storage for large files on mobile devices
+- **Robust Chunking Protocol**: Bidirectional negotiation ensures optimal chunk sizes
+- **Dynamic Chunk Sizing**: 8KB-64KB chunks based on device and file size
+- **Gap Detection & Recovery**: Real-time detection and automatic resend of missing chunks
+- **Hash-Based Integrity**: SHA-256 verification for each chunk and full file
+- **Retry Logic**: Automatic retry (up to 3 attempts) with exponential backoff
+- **Flow Control**: Buffer thresholds (256KB high, 16KB low) prevent overflow
+- **Adaptive Pacing**: Dynamic delays (0-10ms) based on buffer state
+- **Progress Throttling**: UI updates throttled to 100ms intervals
+- **IndexedDB**: Efficient storage for large files (>50MB) on mobile devices
 - **Connection Reuse**: Efficient WebRTC connection management
+- **Chunk Metadata**: Binary headers (48 bytes) with sequence, offset, size, hash
 
 ### Memory Management
 - **Mobile**: IndexedDB for files >50MB to prevent memory issues
