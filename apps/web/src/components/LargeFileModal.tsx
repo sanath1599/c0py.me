@@ -131,6 +131,19 @@ export const LargeFileModal: React.FC<LargeFileModalProps> = ({
                   </div>
                 </div>
 
+                {/* File Assembly Notice */}
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/20 backdrop-blur-[8px] border border-white/30">
+                  <Clock className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: '#F6C148' }} />
+                  <div>
+                    <p className="text-sm font-semibold mb-1" style={{ color: '#2C1B12' }}>
+                      File Assembly on Receiver End
+                    </p>
+                    <p className="text-xs" style={{ color: '#2C1B12', opacity: 0.7 }}>
+                      All large files are assembled on the receiver end after 100% transfer is completed, which might take a while based on file size and device performance. Once the files are ready to download, you will see a download modal.
+                    </p>
+                  </div>
+                </div>
+
                 {/* Peer-to-Peer */}
                 <div className="flex items-start gap-3 p-3 rounded-xl bg-white/20 backdrop-blur-[8px] border border-white/30">
                   <Users className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: '#F6C148' }} />

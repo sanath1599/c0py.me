@@ -720,6 +720,7 @@ export const AppPage: React.FC = () => {
                 onEditProfile={() => setShowProfileModal(true)}
                 onAcceptIncomingFile={acceptIncomingFile}
                 onRejectIncomingFile={rejectIncomingFile}
+                transferTimes={transferTimes}
               />
             </div>
           ) : (

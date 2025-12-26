@@ -32,6 +32,7 @@ interface MobileAppProps {
   onEditProfile: () => void;
   onAcceptIncomingFile: (incomingFileId: string) => void;
   onRejectIncomingFile: (incomingFileId: string) => void;
+  transferTimes?: Record<string, { start: number; end?: number; duration?: number }>;
 }
 
 export const MobileApp: React.FC<MobileAppProps> = ({
@@ -50,6 +51,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   onFilesSelected,
   onFileRemove,
   onEditProfile,
+  onAcceptIncomingFile,
+  onRejectIncomingFile,
+  transferTimes,
 }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -629,12 +633,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         const completedTransfers = transfers.filter(t => t.status === 'completed');
         const hasCompletedTransfers = completedTransfers.length > 0;
         const hasActiveTransfers = transfers.some(t => t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting');
+        const activeTransfers = transfers.filter(t => t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting');
         
         return (
           <div className="w-full h-full" ref={transferProgressRef}>
             <GlassCard className="p-4 min-h-[500px]">
               <h2 className="text-xl font-bold mb-4" style={{ color: '#2C1B12' }}>Transfer Progress</h2>
-              {transfers.length === 0 ? (
+              {activeTransfers.length === 0 && completedTransfers.length === 0 ? (
                 <div className="text-center py-12">
                   <File className="w-12 h-12 mx-auto mb-4 text-orange-400/60" />
                   <p className="text-orange-700/80 mb-4">No active transfers</p>
@@ -650,7 +655,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {transfers.map((transfer) => (
+                  {/* Active Transfers */}
+                  {activeTransfers.map((transfer) => (
                     <div
                       key={transfer.id}
                       className="p-4 rounded-lg bg-white/40 border border-orange-100/60 backdrop-blur-sm"
@@ -687,6 +693,48 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                       />
                     </div>
                   ))}
+                  
+                  {/* Transfer History */}
+                  {completedTransfers.length > 0 && (
+                    <div className="mt-6 pt-6 border-t border-orange-200">
+                      <h3 className="text-lg font-bold mb-4" style={{ color: '#2C1B12' }}>Transfer History</h3>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {completedTransfers.map((transfer) => {
+                          const times = transferTimes?.[transfer.id];
+                          const isIncoming = transfer.id.startsWith('receive-');
+                          const direction = isIncoming ? 'Received' : 'Sent';
+                          return (
+                            <div
+                              key={transfer.id}
+                              className="p-3 rounded-lg bg-white/20 border border-orange-100/40 backdrop-blur-sm"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium truncate text-sm" style={{ color: '#2C1B12' }}>
+                                    {transfer.file.name}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-xs" style={{ color: '#A6521B' }}>
+                                      {direction} from/to {transfer.peer.name}
+                                    </span>
+                                    <span className="text-xs" style={{ color: '#2C1B12', opacity: 0.6 }}>
+                                      • {formatFileSize(transfer.file.size)}
+                                    </span>
+                                  </div>
+                                  {times?.duration && (
+                                    <p className="text-xs mt-1" style={{ color: '#2C1B12', opacity: 0.6 }}>
+                                      Duration: {(times.duration / 1000).toFixed(1)}s
+                                    </p>
+                                  )}
+                                </div>
+                                <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Send More button after transfer completes */}
                   {hasCompletedTransfers && !hasActiveTransfers && (
