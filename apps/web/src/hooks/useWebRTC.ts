@@ -74,6 +74,9 @@ export const useWebRTC = (
     receivedChunkIndices: Set<number>;
     pendingChunkOperations: Promise<void>[]; // Track pending async chunk storage operations
     nextRetryChunkIndex?: number; // Track chunk index for retry chunks
+    fileHandle?: FileSystemFileHandle; // File handle for streaming writes
+    writableStream?: WritableStreamDefaultWriter<Uint8Array>; // Stream writer for direct file writes
+    writeOffset: number; // Current write position in file
   }>>(new Map());
   const pendingFilesRef = useRef<Map<string, { file: File; peer: any; transferId: string }>>(new Map());
   // Track active file transfers for retry capability
@@ -1007,31 +1010,35 @@ export const useWebRTC = (
                   // Set up received file immediately (synchronously) to avoid race conditions
                   // Only create new entry if it doesn't exist (wasn't created by acceptIncomingFile)
                   if (!existingReceivedFile) {
-                  receivedFilesRef.current.set(from, {
-                    name: message.name,
-                    size: message.size,
-                    type: message.fileType,
-                    receivedSize: 0,
-                    blobParts: [],
-                    startTime: startTime,
-                    lastProgressUpdate: 0,
+                    receivedFilesRef.current.set(from, {
+                      name: message.name,
+                      size: message.size,
+                      type: message.fileType,
+                      receivedSize: 0,
+                      blobParts: [],
+                      startTime: startTime,
+                      lastProgressUpdate: 0,
                       lastProgressSize: 0, // Track size at last progress update
-                    useIndexedDB: false, // Will be updated async
-                    transferId: transferId,
-                    chunkIndex: 0,
-                    expectedChunks: expectedChunks,
+                      useIndexedDB: false, // Will be updated async
+                      transferId: transferId,
+                      chunkIndex: 0,
+                      expectedChunks: expectedChunks,
                       receivedChunkIndices: new Set<number>(),
                       pendingChunkOperations: [], // Track pending async chunk storage operations
-                      nextRetryChunkIndex: undefined // Track chunk index for retry chunks
+                      nextRetryChunkIndex: undefined, // Track chunk index for retry chunks
+                      fileHandle: undefined,
+                      writableStream: undefined,
+                      writeOffset: 0
                     });
                   } else {
-                    // Update existing entry - ensure all fields are set correctly
+                    // Update existing entry - preserve file handle and stream if they exist
                     existingReceivedFile.expectedChunks = expectedChunks;
                     existingReceivedFile.chunkIndex = 0;
                     existingReceivedFile.receivedSize = 0;
                     existingReceivedFile.receivedChunkIndices.clear();
                     existingReceivedFile.pendingChunkOperations = [];
                     existingReceivedFile.nextRetryChunkIndex = undefined;
+                    existingReceivedFile.writeOffset = 0; // Reset write offset
                   }
                   
                   // Add transfer immediately
@@ -1313,7 +1320,35 @@ export const useWebRTC = (
                           }
                         }
                         
-                        // Continue with file reconstruction
+                        // If using file stream, close it and mark as complete
+                        if (receivedFile.writableStream) {
+                          try {
+                            await receivedFile.writableStream.close();
+                            console.log('✅ File stream closed, file saved to disk');
+                            receivedFile.writableStream = undefined;
+                            
+                            // Mark transfer as completed
+                            setTransfers(prev => prev.map(t => 
+                              t.id === receivedFile.transferId && t.status === 'transferring' 
+                                ? { ...t, status: 'completed', progress: 100 } 
+                                : t
+                            ));
+                            
+                            // Clean up
+                            receivedFilesRef.current.delete(from);
+                            
+                            if (addToast) {
+                              addToast('success', `File saved: ${receivedFile.name}`);
+                            }
+                            
+                            return; // Don't proceed with reconstruction - file is already saved
+                          } catch (error) {
+                            console.error('❌ Error closing file stream:', error);
+                            // Fall through to reconstruction
+                          }
+                        }
+                        
+                        // Continue with file reconstruction (for non-streaming transfers)
                         await processFileReconstruction(receivedFile, from);
                       } catch (error) {
                         console.error('❌ Error during file verification:', error);
@@ -1377,7 +1412,61 @@ export const useWebRTC = (
                 receivedFile.receivedChunkIndices.add(currentChunkIndex);
               }
               
-              if (receivedFile.useIndexedDB) {
+              // Priority: Write to file stream if available, then IndexedDB, then memory
+              if (receivedFile.writableStream) {
+                // Stream directly to file - this is the most efficient for large files
+                const chunkPromise = (async () => {
+                  try {
+                    const uint8Array = new Uint8Array(event.data);
+                    await receivedFile.writableStream!.write(uint8Array);
+                    receivedFile.writeOffset += uint8Array.length;
+                    
+                    // Log progress for large files every 100 chunks
+                    if (receivedFile.expectedChunks > 100 && currentChunkIndex % 100 === 0) {
+                      console.log(`💾 Written chunk ${currentChunkIndex}/${receivedFile.expectedChunks} to file (${receivedFile.writeOffset}/${receivedFile.size} bytes)`);
+                    }
+                    
+                    // If this was a retry chunk and we're now complete, close stream and verify
+                    if (isRetryChunk && receivedFile.receivedSize >= receivedFile.size) {
+                      console.log(`🔄 Retry chunk received, closing file stream...`);
+                      await receivedFile.writableStream.close();
+                      receivedFile.writableStream = undefined;
+                      
+                      setTimeout(async () => {
+                        const sizeMatches = Math.abs(receivedFile.receivedSize - receivedFile.size) <= 1;
+                        if (sizeMatches) {
+                          console.log(`✅ File complete after retry - file saved to disk`);
+                          setTransfers(prev => prev.map(t => 
+                            t.id === receivedFile.transferId && t.status === 'transferring' 
+                              ? { ...t, status: 'completed', progress: 100 } 
+                              : t
+                          ));
+                          if (addToast) {
+                            addToast('success', `File saved: ${receivedFile.name}`);
+                          }
+                        }
+                      }, 500);
+                    }
+                  } catch (error) {
+                    console.error(`Failed to write chunk ${currentChunkIndex} to file:`, error);
+                    // Fallback to IndexedDB or memory
+                    if (receivedFile.useIndexedDB) {
+                      const { storeIncomingChunk } = await import('../utils/indexedDB');
+                      await storeIncomingChunk(receivedFile.transferId, currentChunkIndex, event.data);
+                    } else {
+                      receivedFile.blobParts.push(event.data);
+                    }
+                  }
+                })();
+                
+                receivedFile.pendingChunkOperations.push(chunkPromise);
+                chunkPromise.finally(() => {
+                  const index = receivedFile.pendingChunkOperations.indexOf(chunkPromise);
+                  if (index > -1) {
+                    receivedFile.pendingChunkOperations.splice(index, 1);
+                  }
+                });
+              } else if (receivedFile.useIndexedDB) {
                 // Store to IndexedDB asynchronously, but track the promise
                 const chunkPromise = (async () => {
                   try {
@@ -1546,7 +1635,7 @@ export const useWebRTC = (
     }
   }, [transfers]);
 
-  const acceptIncomingFile = useCallback((incomingFileId: string) => {
+  const acceptIncomingFile = useCallback(async (incomingFileId: string, fileHandle?: FileSystemFileHandle) => {
     const incomingFile = incomingFiles.find(f => f.id === incomingFileId);
     if (!incomingFile) {
       console.error('❌ Incoming file not found:', incomingFileId);
@@ -1563,6 +1652,23 @@ export const useWebRTC = (
     }
     
     if (dataChannel.readyState === 'open') {
+      // Set up file handle and writable stream if provided
+      let writableStream: WritableStreamDefaultWriter<Uint8Array> | undefined;
+      let writeOffset = 0;
+      
+      if (fileHandle) {
+        try {
+          const stream = await fileHandle.createWritable({ keepExistingData: false });
+          writableStream = stream.getWriter();
+          console.log('📝 Created writable stream for direct file writing');
+        } catch (error) {
+          console.error('❌ Failed to create writable stream:', error);
+          if (addToast) {
+            addToast('error', 'Failed to create file stream. Falling back to memory storage.');
+          }
+        }
+      }
+      
       // Send acceptance message with the sender's transferId
       dataChannel.send(JSON.stringify({
         type: 'file-accepted',
@@ -1609,16 +1715,17 @@ export const useWebRTC = (
         expectedChunks: 0, // Will be set when file-start is received
         receivedChunkIndices: new Set<number>(),
         pendingChunkOperations: [],
-        nextRetryChunkIndex: undefined
+        nextRetryChunkIndex: undefined,
+        fileHandle: fileHandle,
+        writableStream: writableStream,
+        writeOffset: writeOffset
       });
       
-      console.log(`✅ File accepted, transferId: ${transferId}`);
-      
-      console.log('✅ File acceptance sent, transfer started');
+      console.log(`✅ File accepted, transferId: ${transferId}, streaming: ${!!writableStream}`);
     } else {
       console.error('❌ Data channel not open, state:', dataChannel.readyState);
     }
-  }, [incomingFiles, getPeerName]);
+  }, [incomingFiles, getPeerName, addToast]);
 
   const rejectIncomingFile = useCallback((incomingFileId: string) => {
     const incomingFile = incomingFiles.find(f => f.id === incomingFileId);

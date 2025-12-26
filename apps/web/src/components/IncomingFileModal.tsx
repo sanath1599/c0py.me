@@ -14,7 +14,7 @@ interface IncomingFileModalProps {
     fileSize: number;
     fileType: string;
   } | null;
-  onAccept: () => void;
+  onAccept: (fileHandle?: FileSystemFileHandle) => void;
   onReject: () => void;
 }
 
@@ -64,9 +64,32 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
               {/* Actions */}
               <div className="flex gap-4 mt-8 w-full">
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     trackPrivacyEvents.fileReceived(file.fileType);
-                    onAccept();
+                    
+                    // Try to get file handle using File System Access API
+                    let fileHandle: FileSystemFileHandle | undefined;
+                    
+                    if ('showSaveFilePicker' in window) {
+                      try {
+                        fileHandle = await (window as any).showSaveFilePicker({
+                          suggestedName: file.fileName,
+                          types: [{
+                            description: 'File',
+                            accept: { [file.fileType || 'application/octet-stream']: [file.fileName.split('.').pop() || ''] }
+                          }]
+                        });
+                        console.log('📁 User selected save location:', fileHandle.name);
+                      } catch (error: any) {
+                        // User cancelled or error occurred
+                        if (error.name !== 'AbortError') {
+                          console.error('❌ Error getting file handle:', error);
+                        }
+                        // Continue without file handle - will use memory/IndexedDB fallback
+                      }
+                    }
+                    
+                    onAccept(fileHandle);
                   }}
                   className="flex-1 py-3 rounded-xl bg-white/40 border border-orange-200 text-orange-900 font-bold text-lg shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all hover:scale-105 backdrop-blur-[8px] relative overflow-hidden"
                   style={{ boxShadow: '0 4px 24px 0 #F6C14844' }}
@@ -74,7 +97,7 @@ export const IncomingFileModal: React.FC<IncomingFileModalProps> = ({
                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/60 backdrop-blur-[6px] mr-2 shadow border border-white/30">
                     <FileIcon size={20} className="text-orange-700" />
                   </span>
-                  Accept
+                  Accept & Save
                   <span className="pointer-events-none absolute inset-0 rounded-xl opacity-0 hover:opacity-100 transition-opacity duration-300" style={{ background: 'linear-gradient(120deg,rgba(255,255,255,0.18) 0%,rgba(255,255,255,0.05) 100%)' }} />
                 </button>
                 <button

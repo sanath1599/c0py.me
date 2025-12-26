@@ -806,7 +806,7 @@ const filteredPeers = React.useMemo(() => {
             <IncomingFileModal
               isOpen={true}
               file={incomingFiles[0]}
-              onAccept={() => acceptIncomingFile(incomingFiles[0].id)}
+              onAccept={(fileHandle) => acceptIncomingFile(incomingFiles[0].id, fileHandle)}
               onReject={() => rejectIncomingFile(incomingFiles[0].id)}
             />
           )}
