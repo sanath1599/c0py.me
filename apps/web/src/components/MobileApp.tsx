@@ -97,28 +97,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setDenPulse(otherPeers.length > 0);
   }, [otherPeers.length]);
 
-  // Auto-advance to progress when transfer starts (only if not manually navigating)
-  const prevHasActiveTransferRef = useRef(false);
+  // Track manual navigation
   const isManualNavigationRef = useRef(false);
-  
-  useEffect(() => {
-    const hasActiveTransfer = transfers.some(t => 
-      t.status === 'transferring' || t.status === 'pending' || t.status === 'connecting'
-    );
-    
-    // Only auto-advance if transfer just started (wasn't active before) AND user isn't manually navigating
-    if (hasActiveTransfer && !prevHasActiveTransferRef.current && !isManualNavigationRef.current && currentSlide < 3) {
-      setCurrentSlide(3);
-    }
-    
-    prevHasActiveTransferRef.current = hasActiveTransfer;
-    // Reset manual navigation flag after a short delay
-    if (isManualNavigationRef.current) {
-      setTimeout(() => {
-        isManualNavigationRef.current = false;
-      }, 500);
-    }
-  }, [transfers, currentSlide]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -168,8 +148,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return;
       }
       onSendFiles(selectedFiles, selectedPeer);
-      // Auto-advance to progress screen after sending
-      setCurrentSlide(3);
+      // Stay on current slide after sending
     }
   };
 
@@ -202,7 +181,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   };
 
   const handleNext = () => {
-    if (currentSlide < 3) {
+    if (currentSlide < 2) {
       isManualNavigationRef.current = true;
       setCurrentSlide(prev => {
         console.log('Next: moving from', prev, 'to', prev + 1);
@@ -224,8 +203,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 1: // Select Prey
         return selectedFiles.length > 0;
       case 2: // Target Cub
-        return false; // No next button on this slide
-      case 3: // Transfer Progress
         return false; // No next button on this slide
       default:
         return false;
@@ -769,7 +746,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const showNextButton = currentSlide < 2 && canProceedToNext();
   const showBackButton = currentSlide === 2 && selectedPeer && selectedFiles.length > 0;
   const showLeftArrow = currentSlide > 0;
-  const showRightArrow = currentSlide < 3 && canProceedToNext();
+  const showRightArrow = currentSlide < 2 && canProceedToNext();
 
   return (
     <div 
@@ -779,9 +756,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       {/* Carousel Container */}
       <motion.div
         className="flex"
-        animate={{ x: `-${currentSlide * 25}%` }}
+        animate={{ x: `-${currentSlide * 33.333}%` }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        style={{ width: '400%', touchAction: 'pan-x' }}
+        style={{ width: '300%', touchAction: 'pan-x' }}
         drag="x"
         dragConstraints={{ left: 0, right: 0 }}
         dragElastic={0.2}
@@ -790,14 +767,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           if (info.offset.x > threshold && currentSlide > 0) {
             isManualNavigationRef.current = true;
             handlePrevious();
-          } else if (info.offset.x < -threshold && currentSlide < 3) {
+          } else if (info.offset.x < -threshold && currentSlide < 2) {
             isManualNavigationRef.current = true;
             handleNext();
           }
         }}
       >
-        {[0, 1, 2, 3].map((index) => (
-          <div key={index} className="flex-shrink-0" style={{ width: '25%', maxWidth: '100vw', padding: '0 0.75rem', boxSizing: 'border-box' }}>
+        {[0, 1, 2].map((index) => (
+          <div key={index} className="flex-shrink-0" style={{ width: '33.333%', maxWidth: '100vw', padding: '0 0.75rem', boxSizing: 'border-box' }}>
             <div className="w-full h-full">
               {renderSlide(index)}
             </div>
@@ -879,7 +856,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
       {/* Slide Indicators */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 flex gap-2">
-        {[0, 1, 2, 3].map((index) => (
+        {[0, 1, 2].map((index) => (
           <motion.div
             key={index}
             className={`w-2 h-2 rounded-full transition-colors ${

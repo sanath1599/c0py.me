@@ -22,6 +22,7 @@ import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
 import { NetworkErrorModal } from '../components/NetworkErrorModal';
 import { LargeFileModal } from '../components/LargeFileModal';
+import { MobileLargeFileWarningModal } from '../components/MobileLargeFileWarningModal';
 import Confetti from 'react-confetti';
 
 const WORLD_OPTIONS = [
@@ -155,6 +156,13 @@ export const AppPage: React.FC = () => {
       }
     }
   }, [isConnected, selectedWorld, currentUser, joinDefaultRoom]);
+
+  // Reset mobile warning flag when incoming files change
+  useEffect(() => {
+    if (incomingFiles.length === 0) {
+      setShowMobileLargeFileWarning(false);
+    }
+  }, [incomingFiles.length]);
 
   // Show modal when a new completed transfer is added
   useEffect(() => {
@@ -821,12 +829,38 @@ export const AppPage: React.FC = () => {
 
           {/* Incoming File Modal (always visible when needed) */}
           {incomingFiles && incomingFiles.length > 0 && (
-            <IncomingFileModal
-              isOpen={true}
-              file={incomingFiles[0]}
-              onAccept={() => acceptIncomingFile(incomingFiles[0].id)}
-              onReject={() => rejectIncomingFile(incomingFiles[0].id)}
-            />
+            <>
+              {/* Show mobile warning first if on mobile and file >90MB */}
+              {isMobile && incomingFiles[0].fileSize > 90 * 1024 * 1024 && !showMobileLargeFileWarning ? (
+                <MobileLargeFileWarningModal
+                  isOpen={true}
+                  fileSize={incomingFiles[0].fileSize}
+                  fileName={incomingFiles[0].fileName}
+                  onClose={() => {
+                    setShowMobileLargeFileWarning(true);
+                    // After closing warning, show the regular incoming file modal
+                  }}
+                  onContinue={() => {
+                    setShowMobileLargeFileWarning(true);
+                    // Continue to accept the file
+                    acceptIncomingFile(incomingFiles[0].id);
+                  }}
+                />
+              ) : (
+                <IncomingFileModal
+                  isOpen={true}
+                  file={incomingFiles[0]}
+                  onAccept={() => {
+                    setShowMobileLargeFileWarning(false);
+                    acceptIncomingFile(incomingFiles[0].id);
+                  }}
+                  onReject={() => {
+                    setShowMobileLargeFileWarning(false);
+                    rejectIncomingFile(incomingFiles[0].id);
+                  }}
+                />
+              )}
+            </>
           )}
         </main>
       )}
