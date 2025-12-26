@@ -55,94 +55,100 @@ A modern, open-source web application for secure peer-to-peer file sharing with 
 The application uses a robust chunking system with dynamic sizing, gap detection, integrity verification, and automatic recovery:
 
 ```mermaid
-flowchart TD
-    subgraph Sender[Sender Side]
-        A[File Selected] --> B[Calculate File Hash SHA-256]
-        B --> C{Is Mobile?}
-        C -->|Yes| D{File Size > 50MB?}
-        C -->|No| E[Use In-Memory File]
-        D -->|Yes| F[Store to IndexedDB]
-        D -->|No| E
-        F --> G[Create Transfer Manifest]
-        E --> G
-        
-        G --> H[Send transfer-manifest]
-        H --> I[Receive manifest-ack]
-        I --> J[Negotiate Chunk Size]
-        J --> K{Calculate Chunk Size}
-        K -->|Mobile| L[8KB or 16KB]
-        K -->|Desktop| M{File Size?}
-        M -->|>500MB| N[64KB Chunks]
-        M -->|>100MB| O[64KB Chunks]
-        M -->|Other| P[32KB Chunks]
-        
-        L --> Q[Generate Chunk with Metadata]
-        N --> Q
-        O --> Q
-        P --> Q
-        
-        Q --> R[Create Binary Chunk Header]
-        R --> S[Send Chunk with Hash]
-        S --> T{Buffer Check}
-        T -->|>256KB| U[Pause & Wait]
-        T -->|<16KB| V{Adaptive Delay}
-        V -->|Buffer >128KB| W[Wait 10ms]
-        V -->|Buffer >64KB| X[Wait 5ms]
-        V -->|Other| Y[No Delay]
-        W --> Z[Send Next Chunk]
-        X --> Z
-        Y --> Z
-        U --> AA[onbufferedamountlow]
-        AA --> Z
-        
-        Z --> AB{ACK Received?}
-        AB -->|Yes| AC{More Chunks?}
-        AB -->|Resend Request| AD[Resend Missing Chunks]
-        AD --> Q
-        AC -->|Yes| Q
-        AC -->|No| AE[Send transfer-end]
-        AE --> AF[Wait for transfer-complete]
-    end
+flowchart TB
+    Start([File Transfer Starts]) --> SenderStart[📤 Sender Side]
     
-    subgraph Receiver[Receiver Side]
-        AG[Receive transfer-manifest] --> AH[Calculate File Hash]
-        AH --> AI[Send manifest-ack]
-        AI --> AJ[Initialize Chunk Bitmap]
-        AJ --> AK[Receive Binary Chunk]
-        AK --> AL[Parse Chunk Header]
-        AL --> AM[Verify Chunk Hash]
-        AM -->|Valid| AN[Store Chunk]
-        AM -->|Invalid| AO[Request Resend]
-        AO --> AK
-        
-        AN --> AP{Is Mobile?}
-        AP -->|Yes| AQ{File Size > 50MB?}
-        AP -->|No| AR[Store in Memory Map]
-        AQ -->|Yes| AS[Write to IndexedDB]
-        AQ -->|No| AR
-        
-        AS --> AT[Update Bitmap]
-        AR --> AT
-        AT --> AU[Mark Chunk Received]
-        AU --> AV{Gap Detected?}
-        AV -->|Yes| AW[Request Resend for Gaps]
-        AV -->|No| AX[Send chunk-ack]
-        AW --> AK
-        AX --> AY{All Chunks Received?}
-        AY -->|No| AK
-        AY -->|Yes| AZ[Receive transfer-end]
-        AZ --> BA[Assemble File from Chunks]
-        BA --> BB{From IndexedDB?}
-        BB -->|Yes| BC[Read from IDB & Create Blob]
-        BB -->|No| BD[Create Blob from Memory]
-        BC --> BE[Verify Full File Hash]
-        BD --> BE
-        BE -->|Match| BF[Send transfer-complete]
-        BE -->|Mismatch| BG[Send transfer-failed]
-        BF --> BH[File Ready]
-    end
+    SenderStart --> S1[File Selected]
+    S1 --> S2[Calculate File Hash SHA-256]
+    S2 --> S3{Is Mobile Device?}
+    S3 -->|Yes| S4{File Size > 50MB?}
+    S3 -->|No| S5[Use In-Memory File]
+    S4 -->|Yes| S6[Store to IndexedDB]
+    S4 -->|No| S5
+    S6 --> S7[Create Transfer Manifest]
+    S5 --> S7
     
-    Sender -.->|WebRTC DataChannel| Receiver
+    S7 --> S8[Send transfer-manifest]
+    S8 --> S9[Receive manifest-ack]
+    S9 --> S10[Negotiate Chunk Size]
+    S10 --> S11{Calculate Chunk Size}
+    S11 -->|Mobile| S12[8KB or 16KB Chunks]
+    S11 -->|Desktop| S13{File Size?}
+    S13 -->|>500MB| S14[64KB Chunks]
+    S13 -->|>100MB| S15[64KB Chunks]
+    S13 -->|Other| S16[32KB Chunks]
+    
+    S12 --> S17[Generate Chunk with Metadata]
+    S14 --> S17
+    S15 --> S17
+    S16 --> S17
+    
+    S17 --> S18[Create Binary Chunk Header]
+    S18 --> S19[Send Chunk with Hash]
+    S19 --> S20{Buffer Check}
+    S20 -->|>256KB| S21[Pause & Wait for Buffer]
+    S20 -->|<16KB| S22{Adaptive Delay}
+    S22 -->|Buffer >128KB| S23[Wait 10ms]
+    S22 -->|Buffer >64KB| S24[Wait 5ms]
+    S22 -->|Other| S25[No Delay]
+    S23 --> S26[Send Next Chunk]
+    S24 --> S26
+    S25 --> S26
+    S21 --> S27[onbufferedamountlow Event]
+    S27 --> S26
+    
+    S26 --> S28{ACK Received?}
+    S28 -->|Yes| S29{More Chunks?}
+    S28 -->|Resend Request| S30[Resend Missing Chunks]
+    S30 --> S17
+    S29 -->|Yes| S17
+    S29 -->|No| S31[Send transfer-end]
+    S31 --> S32[Wait for transfer-complete]
+    
+    S32 --> WebRTC[🌐 WebRTC DataChannel]
+    
+    WebRTC --> ReceiverStart[📥 Receiver Side]
+    
+    ReceiverStart --> R1[Receive transfer-manifest]
+    R1 --> R2[Calculate File Hash]
+    R2 --> R3[Send manifest-ack]
+    R3 --> R4[Initialize Chunk Bitmap]
+    R4 --> R5[Receive Binary Chunk]
+    R5 --> R6[Parse Chunk Header]
+    R6 --> R7[Verify Chunk Hash]
+    R7 -->|Valid| R8[Store Chunk]
+    R7 -->|Invalid| R9[Request Resend]
+    R9 --> R5
+    
+    R8 --> R10{Is Mobile?}
+    R10 -->|Yes| R11{File Size > 50MB?}
+    R10 -->|No| R12[Store in Memory Map]
+    R11 -->|Yes| R13[Write to IndexedDB]
+    R11 -->|No| R12
+    
+    R13 --> R14[Update Bitmap]
+    R12 --> R14
+    R14 --> R15[Mark Chunk Received]
+    R15 --> R16{Gap Detected?}
+    R16 -->|Yes| R17[Request Resend for Gaps]
+    R16 -->|No| R18[Send chunk-ack]
+    R17 --> R5
+    R18 --> R19{All Chunks Received?}
+    R19 -->|No| R5
+    R19 -->|Yes| R20[Receive transfer-end]
+    R20 --> R21[Assemble File from Chunks]
+    R21 --> R22{From IndexedDB?}
+    R22 -->|Yes| R23[Read from IDB & Create Blob]
+    R22 -->|No| R24[Create Blob from Memory]
+    R23 --> R25[Verify Full File Hash]
+    R24 --> R25
+    R25 -->|Match| R26[Send transfer-complete]
+    R25 -->|Mismatch| R27[Send transfer-failed]
+    R26 --> R28[✅ File Ready]
+    R27 --> R29[❌ Transfer Failed]
+    
+    R28 --> End([Transfer Complete])
+    R29 --> End
 ```
 
 ## How It Works
