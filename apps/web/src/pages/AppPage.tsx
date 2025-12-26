@@ -111,6 +111,30 @@ export const AppPage: React.FC = () => {
   const [showLargeFileModal, setShowLargeFileModal] = useState(false);
   const [largeFileInfo, setLargeFileInfo] = useState<{ size: number; fileName?: string } | null>(null);
 
+  // Preload network error image so it's available when network goes down
+  useEffect(() => {
+    const preloadImage = (src: string) => {
+      return new Promise<void>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          console.log('✅ Network error image preloaded');
+          resolve();
+        };
+        img.onerror = () => {
+          console.warn('⚠️ Failed to preload network error image:', src);
+          reject(new Error(`Failed to preload image: ${src}`));
+        };
+        // Set src after handlers to ensure they're attached
+        img.src = src;
+      });
+    };
+    
+    // Preload the network error image immediately on mount
+    preloadImage('/network_error.png').catch(() => {
+      // Silently handle preload failures - image will load when needed
+    });
+  }, []);
+
   // Join rooms when connection is established
   useEffect(() => {
     if (isConnected && selectedWorld) {
