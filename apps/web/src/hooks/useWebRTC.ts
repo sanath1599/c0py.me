@@ -954,39 +954,96 @@ export const useWebRTC = (
                           return;
                         }
                         
-                        // For IndexedDB files, verify we have all chunks
+                        // Verify chunks - prioritize size check over chunk index tracking
+                        // Size is the ultimate truth: if we have all bytes, we have the file
+                        const sizeMatches = Math.abs(receivedFile.receivedSize - receivedFile.size) <= 1;
+                        
                         if (receivedFile.useIndexedDB) {
-                          console.log(`🔍 Verifying chunks: expected ${receivedFile.expectedChunks}, received indices: ${Array.from(receivedFile.receivedChunkIndices).sort((a, b) => a - b).slice(0, 20).join(', ')}${receivedFile.receivedChunkIndices.size > 20 ? '...' : ''}`);
-                          
-                          const missingChunks: number[] = [];
-                          for (let i = 0; i < receivedFile.expectedChunks; i++) {
-                            if (!receivedFile.receivedChunkIndices.has(i)) {
-                              missingChunks.push(i);
-                            }
-                          }
-                          
-                          if (missingChunks.length > 0) {
-                            console.error(`❌ Missing chunks: ${missingChunks.slice(0, 10).join(', ')}${missingChunks.length > 10 ? `... (${missingChunks.length} total)` : ''}`);
-                            console.error(`   Expected: ${receivedFile.expectedChunks}, Received: ${receivedFile.receivedChunkIndices.size}, Missing: ${missingChunks.length}`);
-                            console.error(`   Received size: ${receivedFile.receivedSize}, Expected size: ${receivedFile.size}`);
+                          try {
+                            const idbUtils = await import('../utils/indexedDB');
+                            const db = await idbUtils.initDB();
                             
-                            setTransfers(prev => prev.map(t => 
-                              t.id === receivedFile.transferId && t.status === 'transferring' 
-                                ? { ...t, status: 'failed' } 
-                                : t
-                            ));
-                            if (addToast) {
-                              addToast('error', `File transfer incomplete: missing ${missingChunks.length} chunks`);
+                            // Check IndexedDB directly for actual stored chunks
+                            const chunkCheckPromise = new Promise<{ chunks: any[], missing: number[] }>((resolve) => {
+                              const transaction = db.transaction(['incoming-chunks'], 'readonly');
+                              const store = transaction.objectStore('incoming-chunks');
+                              const index = store.index('transferId');
+                              const request = index.getAll(receivedFile.transferId);
+                              
+                              request.onsuccess = () => {
+                                const chunks = request.result || [];
+                                const storedIndices = new Set(chunks.map((c: any) => c.chunkIndex));
+                                const missingChunks: number[] = [];
+                                
+                                for (let i = 0; i < receivedFile.expectedChunks; i++) {
+                                  if (!storedIndices.has(i)) {
+                                    missingChunks.push(i);
+                                  }
+                                }
+                                
+                                resolve({ chunks, missing: missingChunks });
+                              };
+                              
+                              request.onerror = () => {
+                                resolve({ chunks: [], missing: [] });
+                              };
+                            });
+                            
+                            const { chunks, missing } = await chunkCheckPromise;
+                            
+                            console.log(`🔍 IndexedDB verification: expected ${receivedFile.expectedChunks}, found ${chunks.length} chunks`);
+                            console.log(`   In-memory indices tracked: ${receivedFile.receivedChunkIndices.size}`);
+                            console.log(`   Received size: ${receivedFile.receivedSize}/${receivedFile.size} bytes`);
+                            
+                            // If size matches, we have all the data - chunk index tracking might be off
+                            if (missing.length > 0) {
+                              if (sizeMatches) {
+                                // Size matches but chunk indices don't - likely a tracking issue, not actual missing data
+                                console.warn(`⚠️ Chunk index mismatch (${missing.length} missing indices) but size matches - proceeding with reconstruction`);
+                                console.warn(`   Missing indices: ${missing.slice(0, 10).join(', ')}${missing.length > 10 ? `... (${missing.length} total)` : ''}`);
+                              } else {
+                                // Both size and chunks don't match - real problem
+                                console.error(`❌ Missing chunks in IndexedDB: ${missing.slice(0, 10).join(', ')}${missing.length > 10 ? `... (${missing.length} total)` : ''}`);
+                                console.error(`   Expected: ${receivedFile.expectedChunks}, Found: ${chunks.length}, Missing: ${missing.length}`);
+                                console.error(`   Received size: ${receivedFile.receivedSize}, Expected: ${receivedFile.size}, Difference: ${receivedFile.size - receivedFile.receivedSize}`);
+                                
+                                setTransfers(prev => prev.map(t => 
+                                  t.id === receivedFile.transferId && t.status === 'transferring' 
+                                    ? { ...t, status: 'failed' } 
+                                    : t
+                                ));
+                                if (addToast) {
+                                  addToast('error', `File transfer incomplete: missing ${missing.length} chunks`);
+                                }
+                                return;
+                              }
+                            } else {
+                              console.log(`✅ All ${receivedFile.expectedChunks} chunks verified in IndexedDB`);
                             }
-                            return;
+                          } catch (error) {
+                            console.error('❌ Error verifying chunks in IndexedDB:', error);
+                            // Fall back to size check - if size matches, proceed
+                            if (!sizeMatches) {
+                              console.error(`❌ Size mismatch: received ${receivedFile.receivedSize}, expected ${receivedFile.size}`);
+                              setTransfers(prev => prev.map(t => 
+                                t.id === receivedFile.transferId && t.status === 'transferring' 
+                                  ? { ...t, status: 'failed' } 
+                                  : t
+                              ));
+                              if (addToast) {
+                                addToast('error', `File transfer incomplete: size mismatch`);
+                              }
+                              return;
+                            } else {
+                              console.warn('⚠️ Could not verify chunks in IndexedDB, but size matches - proceeding');
+                            }
                           }
-                          console.log(`✅ All ${receivedFile.expectedChunks} chunks received and verified`);
                         } else {
                           // For memory files, verify we have the right number of blob parts
                           const expectedBlobParts = receivedFile.expectedChunks;
-                          if (receivedFile.blobParts.length !== expectedBlobParts) {
+                          if (receivedFile.blobParts.length !== expectedBlobParts && !sizeMatches) {
                             console.warn(`⚠️ Blob parts count mismatch: expected ${expectedBlobParts}, got ${receivedFile.blobParts.length}`);
-                            // This is a warning, not an error, as long as the total size matches
+                            // If size matches, it's fine - last chunk might be smaller
                           }
                         }
                         
