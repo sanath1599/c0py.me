@@ -29,14 +29,17 @@ export const CubProgress: React.FC<CubProgressProps> = ({
   // Calculate transferred bytes if not provided
   const transferred = bytesTransferred ?? (fileSize ? (clampedProgress / 100) * fileSize : 0);
   
-  // Format speed
+  // Format speed (convert bytes to bits for display)
   const formatSpeed = (bytesPerSecond: number) => {
-    if (bytesPerSecond >= 1024 * 1024) {
-      return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
-    } else if (bytesPerSecond >= 1024) {
-      return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+    // Convert bytes to bits (multiply by 8)
+    const bitsPerSecond = bytesPerSecond * 8;
+    
+    if (bitsPerSecond >= 1024 * 1024) {
+      return `${(bitsPerSecond / (1024 * 1024)).toFixed(1)} Mb/s`;
+    } else if (bitsPerSecond >= 1024) {
+      return `${(bitsPerSecond / 1024).toFixed(1)} Kb/s`;
     } else {
-      return `${bytesPerSecond.toFixed(0)} B/s`;
+      return `${bitsPerSecond.toFixed(0)} b/s`;
     }
   };
 
