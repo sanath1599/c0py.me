@@ -86,9 +86,6 @@ export const useWebRTC = (
     file: File;
     url: string;
     peer: { id: string; name: string; emoji: string; color: string };
-    expectedHash?: string;
-    verified?: boolean;
-    calculatedHash?: string;
   }>>([]);
 
   // Robust chunking context for sender
@@ -625,18 +622,11 @@ export const useWebRTC = (
     const ctx = robustSendContextRef.current.get(transferId);
     if (!ctx) return;
 
-    if (complete.verified) {
-      console.log(`✅ [Robust] Transfer verified successfully!`);
-      setTransfers(prev => prev.map(t => 
-        t.id === transferId ? { ...t, status: 'completed', progress: 100 } : t
-      ));
-      logSystemEvent.transferCompleted(transferId, Date.now() - ctx.startTime, ctx.file.size, 0);
-    } else {
-      console.log(`⚠️ Transfer completed but hash verification failed`);
-      setTransfers(prev => prev.map(t => 
-        t.id === transferId ? { ...t, status: 'failed' } : t
-      ));
-    }
+    console.log(`✅ [Robust] Transfer completed successfully!`);
+    setTransfers(prev => prev.map(t => 
+      t.id === transferId ? { ...t, status: 'completed', progress: 100 } : t
+    ));
+    logSystemEvent.transferCompleted(transferId, Date.now() - ctx.startTime, ctx.file.size, 0);
 
     robustSendContextRef.current.delete(transferId);
   }, []);
@@ -876,10 +866,7 @@ export const useWebRTC = (
           name: getPeerName(from), 
           emoji: '📱', 
           color: '#F6C148' 
-        },
-        expectedHash: end.fileHash,
-        verified: undefined, // Not verified yet, user can verify manually
-        calculatedHash: undefined
+        }
       }
     ]);
     
@@ -901,13 +888,11 @@ export const useWebRTC = (
       });
     }
 
-    // Send completion message (without verification status)
+    // Send completion message
     dataChannel.send(JSON.stringify({
       type: 'transfer-complete',
       payload: {
         transferId: ctx.manifest.transferId,
-        verified: undefined, // Verification is now manual
-        calculatedHash: undefined,
         totalChunksReceived: ctx.bitmap.received.size,
         duration,
         timestamp: Date.now()
@@ -1613,10 +1598,5 @@ export const useWebRTC = (
     acceptIncomingFile,
     rejectIncomingFile,
     completedReceived,
-    updateCompletedTransfer: (id: string, updates: { verified?: boolean; calculatedHash?: string }) => {
-      setCompletedReceived(prev => prev.map(t => 
-        t.id === id ? { ...t, ...updates } : t
-      ));
-    },
   };
 };
