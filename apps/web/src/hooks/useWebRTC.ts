@@ -86,6 +86,9 @@ export const useWebRTC = (
     file: File;
     url: string;
     peer: { id: string; name: string; emoji: string; color: string };
+    expectedHash?: string;
+    verified?: boolean;
+    calculatedHash?: string;
   }>>([]);
 
   // Robust chunking context for sender
@@ -836,8 +839,8 @@ export const useWebRTC = (
       return true;
     }
 
-    // All chunks received, verify file hash
-    console.log(`🔐 Verifying file integrity...`);
+    // All chunks received, assemble file
+    console.log(`📦 All chunks received. Assembling file...`);
     
     let file: File;
     try {
@@ -856,63 +859,55 @@ export const useWebRTC = (
       return true;
     }
 
-    // Verify hash
-    const hashResult = await hashFile(file);
-    const verified = hashResult.hex === end.fileHash.toLowerCase();
-
     const duration = Date.now() - ctx.startTime;
 
-    if (verified) {
-      console.log(`✅ File hash verified: ${hashSummary(hashResult.hex)}`);
-      
-      // Success!
-      const blob = new Blob([file], { type: ctx.manifest.fileType });
-      const url = URL.createObjectURL(blob);
-      
-      setCompletedReceived(prev => [
-        ...prev,
-        {
-          id: `completed-${Date.now()}-${Math.random()}`,
-          file,
-          url,
-          peer: { 
-            id: from, 
-            name: getPeerName(from), 
-            emoji: '📱', 
-            color: '#F6C148' 
-          }
-        }
-      ]);
-      
-      setTransfers(prev => prev.map(t => 
-        t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
-      ));
-      
-      logSystemEvent.fileReceived(ctx.manifest.fileType, ctx.manifest.fileSize);
-      playSuccessSound();
-      
-      if (addToast) {
-        addToast('success', `File received: ${ctx.manifest.fileName} from ${getPeerName(from)}`);
+    // Success! Store file with expected hash for manual verification
+    const blob = new Blob([file], { type: ctx.manifest.fileType });
+    const url = URL.createObjectURL(blob);
+    
+    setCompletedReceived(prev => [
+      ...prev,
+      {
+        id: `completed-${Date.now()}-${Math.random()}`,
+        file,
+        url,
+        peer: { 
+          id: from, 
+          name: getPeerName(from), 
+          emoji: '📱', 
+          color: '#F6C148' 
+        },
+        expectedHash: end.fileHash,
+        verified: undefined, // Not verified yet, user can verify manually
+        calculatedHash: undefined
       }
-      
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('File Received', {
-          body: `Successfully received ${ctx.manifest.fileName} from ${getPeerName(from)}`,
-          icon: '/favicon.ico'
-        });
-      }
-    } else {
-      console.log(`❌ Hash mismatch! Expected: ${hashSummary(end.fileHash)}, Got: ${hashSummary(hashResult.hex)}`);
-      addToast?.('error', 'File transfer failed: integrity check failed');
+    ]);
+    
+    setTransfers(prev => prev.map(t => 
+      t.peer.id === from && t.status === 'transferring' ? { ...t, status: 'completed', progress: 100 } : t
+    ));
+    
+    logSystemEvent.fileReceived(ctx.manifest.fileType, ctx.manifest.fileSize);
+    playSuccessSound();
+    
+    if (addToast) {
+      addToast('success', `File received: ${ctx.manifest.fileName} from ${getPeerName(from)}`);
+    }
+    
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('File Received', {
+        body: `Successfully received ${ctx.manifest.fileName} from ${getPeerName(from)}`,
+        icon: '/favicon.ico'
+      });
     }
 
-    // Send completion message
+    // Send completion message (without verification status)
     dataChannel.send(JSON.stringify({
       type: 'transfer-complete',
       payload: {
         transferId: ctx.manifest.transferId,
-        verified,
-        calculatedHash: hashResult.hex,
+        verified: undefined, // Verification is now manual
+        calculatedHash: undefined,
         totalChunksReceived: ctx.bitmap.received.size,
         duration,
         timestamp: Date.now()
@@ -1618,5 +1613,10 @@ export const useWebRTC = (
     acceptIncomingFile,
     rejectIncomingFile,
     completedReceived,
+    updateCompletedTransfer: (id: string, updates: { verified?: boolean; calculatedHash?: string }) => {
+      setCompletedReceived(prev => prev.map(t => 
+        t.id === id ? { ...t, ...updates } : t
+      ));
+    },
   };
 };

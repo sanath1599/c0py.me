@@ -15,8 +15,9 @@ import { generateRandomUsername } from '../utils/names';
 import { LionIcon } from '../components/LionIcon';
 import { formatFileSize } from '../utils/format';
 import JSZip from 'jszip';
-import { Globe, Lock, Wifi, Play, FileText, Github, Star } from 'lucide-react';
+import { Globe, Lock, Wifi, Play, FileText, Github, Star, CheckCircle, XCircle, Loader } from 'lucide-react';
 import { logUserAction, logSystemEvent } from '../utils/eventLogger';
+import { hashFile, hashSummary } from '../services/hashService';
 
 import { DemoModal } from '../components/DemoModal';
 import { IncomingFileModal } from '../components/IncomingFileModal';
@@ -88,7 +89,7 @@ export const AppPage: React.FC = () => {
     setShowLargeFileModal(true);
   };
 
-  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived } = useWebRTC(sendSignal, currentUser.id, addToast, peers, isConnected, handleLargeFileTransfer);
+  const { transfers, incomingFiles, sendFile, handleSignal, cancelTransfer, acceptIncomingFile, rejectIncomingFile, completedReceived, updateCompletedTransfer } = useWebRTC(sendSignal, currentUser.id, addToast, peers, isConnected, handleLargeFileTransfer);
 
   // Set up signal handling once
   useEffect(() => {
@@ -104,6 +105,7 @@ export const AppPage: React.FC = () => {
   const prevCompletedCount = useRef(0);
   const [shownTransferToasts, setShownTransferToasts] = useState<Set<string>>(new Set());
   const [transferTimes, setTransferTimes] = useState<Record<string, { start: number; end?: number; duration?: number }>>({});
+  const [isVerifyingHash, setIsVerifyingHash] = useState(false);
 
   const [selectedWorld, setSelectedWorld] = useState<WorldType | null>(null);
   const [showRoomModal, setShowRoomModal] = useState(false);
@@ -168,11 +170,48 @@ export const AppPage: React.FC = () => {
   // Show modal when a new completed transfer is added
   useEffect(() => {
     if (completedReceived.length > prevCompletedCount.current) {
-      setActiveTransfer(completedReceived[completedReceived.length - 1]);
+      const latestTransfer = completedReceived[completedReceived.length - 1];
+      setActiveTransfer(latestTransfer);
       setShowTransferModal(true);
+      setIsVerifyingHash(false); // Reset verification state
     }
     prevCompletedCount.current = completedReceived.length;
   }, [completedReceived]);
+
+  // Hash verification function
+  const handleVerifyHash = async () => {
+    if (!activeTransfer || !activeTransfer.expectedHash || isVerifyingHash) return;
+    
+    setIsVerifyingHash(true);
+    try {
+      const hashResult = await hashFile(activeTransfer.file);
+      const verified = hashResult.hex.toLowerCase() === activeTransfer.expectedHash.toLowerCase();
+      
+      // Update the completedReceived array with verification result
+      updateCompletedTransfer(activeTransfer.id, {
+        verified,
+        calculatedHash: hashResult.hex
+      });
+      
+      // Update activeTransfer state to reflect the change
+      setActiveTransfer({
+        ...activeTransfer,
+        verified,
+        calculatedHash: hashResult.hex
+      });
+      
+      if (verified) {
+        addToast('success', `✅ Hash verified! File integrity confirmed.`);
+      } else {
+        addToast('error', `❌ Hash mismatch! File may be corrupted. Expected: ${hashSummary(activeTransfer.expectedHash)}, Got: ${hashSummary(hashResult.hex)}`);
+      }
+    } catch (error) {
+      console.error('Hash verification error:', error);
+      addToast('error', 'Failed to verify file hash. Please try again.');
+    } finally {
+      setIsVerifyingHash(false);
+    }
+  };
 
   const handlePeerClick = (peer: Peer) => {
     setSelectedPeer(peer);
@@ -920,10 +959,58 @@ export const AppPage: React.FC = () => {
               <div className="font-medium text-lg" style={{ color: '#A6521B' }}>{activeTransfer.file.name}</div>
               <div className="text-xs text-gray-500">{activeTransfer.file.type} • {formatFileSize(activeTransfer.file.size)}</div>
             </div>
+            
+            {/* Hash Verification Section */}
+            {activeTransfer.expectedHash && (
+              <div className="w-full mb-4 p-3 rounded-lg bg-gray-50 border border-gray-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium" style={{ color: '#2C1B12' }}>File Integrity</span>
+                  {activeTransfer.verified !== undefined && (
+                    <div className="flex items-center gap-1">
+                      {activeTransfer.verified ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                          <span className="text-xs text-green-600 font-medium">Verified</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-4 h-4 text-red-600" />
+                          <span className="text-xs text-red-600 font-medium">Mismatch</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {activeTransfer.verified === undefined ? (
+                  <button
+                    onClick={handleVerifyHash}
+                    disabled={isVerifyingHash}
+                    className="w-full py-2 px-4 rounded-lg bg-blue-500 text-white font-semibold text-center hover:bg-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isVerifyingHash ? (
+                      <>
+                        <Loader className="w-4 h-4 animate-spin" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <span>Verify Hash</span>
+                    )}
+                  </button>
+                ) : (
+                  <div className="text-xs text-gray-600 space-y-1">
+                    <div><span className="font-medium">Expected:</span> {hashSummary(activeTransfer.expectedHash)}</div>
+                    {activeTransfer.calculatedHash && (
+                      <div><span className="font-medium">Calculated:</span> {hashSummary(activeTransfer.calculatedHash)}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            
             <a
               href={activeTransfer.url}
               download={activeTransfer.file.name}
-              className="mt-4 w-full py-2 px-4 rounded-lg bg-orange-400 text-white font-semibold text-center hover:bg-orange-500 transition"
+              className="mt-2 w-full py-2 px-4 rounded-lg bg-orange-400 text-white font-semibold text-center hover:bg-orange-500 transition"
             >
               Download
             </a>
